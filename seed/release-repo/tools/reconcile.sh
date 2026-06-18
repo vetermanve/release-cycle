@@ -64,21 +64,8 @@ build_repo() {  # rdir name date ids_list
     [ "$okm" = 1 ] && merge_units+=("$short")
   done < <(git -C "$rdir" for-each-ref --format='%(refname:short)' 'refs/remotes/origin/merge/*' 2>/dev/null)
 
-  # эскалация: убрать merge-юнит, чьи БТ — подмножество другого (pair ⊂ triple -> берём triple)
-  if [ "${#merge_units[@]}" -gt 1 ]; then
-    local filtered=() a bb abts bbts allin x sub
-    for a in "${merge_units[@]}"; do
-      abts="$(parse_bts "$a" | tr '\n' ' ')"; sub=0
-      for bb in "${merge_units[@]}"; do
-        [ "$a" = "$bb" ] && continue
-        bbts="$(parse_bts "$bb" | tr '\n' ' ')"
-        allin=1; for x in $abts; do in_set "$x" "$bbts" || allin=0; done
-        if [ "$allin" = 1 ] && [ "$(echo $abts|wc -w)" -lt "$(echo $bbts|wc -w)" ]; then sub=1; break; fi
-      done
-      [ "$sub" = 0 ] && filtered+=("$a")
-    done
-    merge_units=( ${filtered[@]+"${filtered[@]}"} )
-  fi
+  # Включаем ВСЕ merge-ветки с БТ⊆поезда (могут разрешать разные конфликты).
+  # Противоречивые перекрытия (один ханк по-разному) всплывут конфликтом — это корректно.
 
   # feature-юниты поезда, что есть в репо
   local feat_units=() id
