@@ -42,6 +42,10 @@ cut_branch() {  # cut_branch <from-branch> <to-branch>
 }
 
 do_depart() {
+  if [ -z "$(affected_names)" ]; then
+    echo "поезд ${DATE} не собран на dev (нет affected-repos.lock). Сначала: make dev DATE=${DATE} BTS=..."
+    exit 1
+  fi
   python3 "${HERE}/cfg.py" set-status "$BTSET" departed
   commit_relrepo "ci(${DATE}): depart, status=departed" "trains/${DATE}/bt-set.yaml"
   cut_branch "dev-${DATE}" "test-${DATE}"
@@ -69,6 +73,10 @@ do_gate_fail() {
 }
 
 do_gate_pass() {
+  if [ -z "$(affected_names)" ]; then
+    echo "поезд ${DATE} не собран. Сначала make dev / make test."
+    exit 1
+  fi
   # предпрод
   cut_branch "test-${DATE}" "release-${DATE}"
   bash "${HERE}/deploy_stand.sh" prepod "${DATE}"

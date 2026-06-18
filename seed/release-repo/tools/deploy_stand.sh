@@ -10,8 +10,14 @@ BRANCH="$(branch_for "$ENV" "$DATE")"
 PORT="$(port_for "$ENV")"
 
 BTSET="${RELREPO_DIR}/trains/${DATE}/bt-set.yaml"
+LOCK="${RELREPO_DIR}/trains/${DATE}/affected-repos.lock"
+# meta.bts = РЕАЛЬНО замердженные БТ (из affected-repos.lock), а не намерение из bt-set.
 IDS_CSV=""
-[ -f "$BTSET" ] && IDS_CSV="$(python3 "${HERE}/cfg.py" bts "$BTSET" | sort -n | paste -sd, -)"
+if [ -f "$LOCK" ]; then
+  IDS_CSV="$(grep -oE 'bts=[0-9,]+' "$LOCK" | sed 's/bts=//' | tr ',' '\n' | grep -E '^[0-9]+$' | sort -nu | paste -sd, -)"
+fi
+# фолбэк на bt-set, если lock пуст (например, ни одного затронутого репо)
+[ -z "$IDS_CSV" ] && [ -f "$BTSET" ] && IDS_CSV="$(python3 "${HERE}/cfg.py" bts "$BTSET" | sort -n | paste -sd, -)"
 
 work="$(mktemp -d)"; web="${work}/web"; mkdir -p "$web"
 

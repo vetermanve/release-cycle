@@ -54,22 +54,26 @@ bootstrap: ## (пере)сеять GitLab из seed
 demo: ## проиграть полный жизненный цикл с проверками
 	@$(RUNCTL) demo
 
-test: ## автономные ассерты end-state
+check: ## автономные ассерты end-state
 	@$(RUNCTL) test
 
 status: ## статус поездов и стендов
 	@$(RUNCTL) status
 
-create-train: ## создать/обновить поезд: make create-train DATE=26.06.09 BTS=16,25
+# --- этапы поезда: команда = стенд, куда катит ---
+dev: ## собрать поезд на dev-стенд: make dev DATE=26.06.09 BTS=16,25
 	@$(RUNCTL) create-train $(DATE) $(BTS)
 
-train: ## отправить поезд: make train DATE=26.06.09
+test: ## отправить на тест-стенд: make test DATE=26.06.09
 	@$(RUNCTL) depart $(DATE)
 
-gate: ## гейт: make gate DATE=26.06.09 RESULT=pass|fail
-	@$(RUNCTL) gate $(DATE) $(RESULT)
+release: ## предпрод(:8083) + прод(:8084) + merge master + tag: make release DATE=26.06.09
+	@$(RUNCTL) gate $(DATE) pass
 
-inject-defect: ## stop-the-line демо: make inject-defect DATE=26.06.20 BT=99
+stop: ## stop-the-line (дефект на тесте): make stop DATE=26.06.09
+	@$(RUNCTL) gate $(DATE) fail
+
+inject-defect: ## демо stop-the-line: make inject-defect DATE=26.06.20 BT=99
 	@$(RUNCTL) create-train $(DATE) $(BT)
 	@$(RUNCTL) depart $(DATE)
 	@$(RUNCTL) gate $(DATE) fail
@@ -103,4 +107,4 @@ reset: guard-docker ## полный сброс (тома, state, стенд-об
 	@echo "reset: всё снесено, поднимаю заново..."
 	@$(MAKE) --no-print-directory up
 
-.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo test status create-train train gate inject-defect logs clock-init next-train tick down reset
+.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status dev test release stop inject-defect logs clock-init next-train tick down reset
