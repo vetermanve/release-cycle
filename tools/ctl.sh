@@ -81,6 +81,19 @@ wait_sha_pipeline() {  # sha -> echoes status
   wait_pipeline "$pid"
 }
 
+gl_trigger() {  # action date -> pipeline status (для ре-рана reconcile после resolve)
+  local pid
+  pid="$(curl -sS -X POST -F "token=$TRIGGER_TOKEN" -F "ref=master" \
+    -F "variables[ACTION]=$1" -F "variables[TRAIN_DATE]=$2" \
+    "$GL/api/v4/projects/$REL/trigger/pipeline" | jq -r '.id // empty')"
+  [ -n "$pid" ] || { echo "notrigger"; return 0; }
+  wait_pipeline "$pid"
+}
+
+proj_file() {  # project_id path ref -> raw содержимое
+  gapi "$GL/api/v4/projects/$1/repository/files/$(enc "$2")/raw?ref=$(enc "$3")"
+}
+
 put_btset() {  # date "ids" -> commit bt-set -> reconcile. echoes pipeline status
   local date="$1" ids="$2" path content act sha
   path="trains/${date}/bt-set.yaml"
@@ -104,6 +117,24 @@ PY
   sha="$(gl_commit "promote: $*" "$acts")"
   [ -n "$sha" ] || { echo "nocommit"; return 0; }
   wait_sha_pipeline "$sha"
+}
+
+cmd_resolve() {  # repo mb -> ДЕМО-резолв merge-ветки (детерминированно) + push.
+  # Реально: разраб чекаутит mb (от мастера, с 2 БТ), резолвит маркеры руками, пушит.
+  local repo="$1" mb="$2" d url
+  url="http://oauth2:$GITLAB_TOKEN@gitlab:8929/$GROUP/$repo.git"
+  d="$(mktemp -d)"
+  git clone -q "$url" "$d"
+  git -C "$d" checkout -q "$mb"
+  git -C "$d" config user.email dev@polygon.local; git -C "$d" config user.name dev
+  # демо-резолюция конфликта в shared.json: объединить owner
+  if grep -q '<<<<<<<' "$d/shared.json" 2>/dev/null; then
+    printf '{\n  "owner": "bt-77+bt-78",\n  "counter": 0\n}\n' > "$d/shared.json"
+  fi
+  git -C "$d" add -A
+  git -C "$d" commit -q -m "resolve: разрешить конфликт в ${mb}" || true
+  git -C "$d" push -q "$url" "$mb"
+  echo "resolved ${mb}"
 }
 
 cmd_stop() {  # date -> status=stopped + postmortem одним коммитом (reconcile no-op: status!=open)
@@ -222,9 +253,18 @@ cmd_demo() {
   echo "  pipeline: $(put_btset $T3 99)"
   stand_has_bt dev 99 && ok "BT-99 переехал в $T3 (dev)" || fail "BT-99 не переехал"
 
-  echo "### 8. Конфликт: поезд $TC BT-77 + BT-78 (один файл) -> reconcile FAIL"
+  echo "### 8. Конфликт bt-77/bt-78 -> skeleton -> resolve -> зелено, bt-ветки чистые"
   st="$(put_btset $TC 77,78)"
-  [ "$st" = failed ] && ok "reconcile $TC упал по конфликту (pipeline=failed)" || fail "ожидался failed, получили: $st"
+  [ "$st" = failed ] && ok "reconcile упал, нужен резолв" || fail "ожидался failed, получили: $st"
+  branch_exists "$SVC_A_ID" "merge/bt-77-bt-78" && ok "создана merge/bt-77-bt-78 (skeleton)" || fail "нет merge-ветки"
+  echo "  resolve: $(cmd_resolve svc-a merge/bt-77-bt-78)"
+  echo "  rebuild: $(gl_trigger reconcile $TC)"
+  local owner o77 o78
+  owner="$(proj_file "$SVC_A_ID" shared.json "dev-$TC" | jq -r '.owner' 2>/dev/null)"
+  [ "$owner" = "bt-77+bt-78" ] && ok "dev shared.json разрешён (owner=$owner)" || fail "dev не разрешён (owner=$owner)"
+  o77="$(proj_file "$SVC_A_ID" shared.json "feature/bt-77" | jq -r '.owner' 2>/dev/null)"
+  o78="$(proj_file "$SVC_A_ID" shared.json "feature/bt-78" | jq -r '.owner' 2>/dev/null)"
+  { [ "$o77" = "bt-77" ] && [ "$o78" = "bt-78" ]; } && ok "feature/bt-77,78 чистые ($o77/$o78)" || fail "bt-ветки загажены ($o77/$o78)"
 
   echo
   [ "${FAILED:-0}" = 0 ] && echo "DEMO: ВСЕ ПРОВЕРКИ ЗЕЛЁНЫЕ" || echo "DEMO: ЕСТЬ ПАДЕНИЯ"
@@ -262,8 +302,10 @@ case "${1:-}" in
   promote-test)           shift; stands_put test "$1";;
   promote-release)        shift; stands_put prepod "$1" prod "$1";;
   stop)                   shift; cmd_stop "$1";;
+  resolve)                shift; cmd_resolve "$1" "$2";;
+  rebuild)                shift; gl_trigger reconcile "$1";;
   status)  cmd_status;;
   demo)    cmd_demo;;
   test)    cmd_test;;
-  *) echo "usage: ctl.sh {create-train|promote-test|promote-release|stop|status|demo|test}"; exit 1;;
+  *) echo "usage: ctl.sh {create-train|promote-test|promote-release|stop|resolve|rebuild|status|demo|test}"; exit 1;;
 esac
