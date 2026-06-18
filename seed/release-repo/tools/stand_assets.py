@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import glob
 import datetime
 
 
@@ -21,8 +22,10 @@ def main():
     web, env, date, branch, ids_csv = sys.argv[1:6]
     ids = [int(x) for x in ids_csv.split(",") if x.strip()]
 
-    for sub in ("", "svc-a", "svc-b"):
-        write_index(os.path.join(web, sub, "features") if sub else os.path.join(web, "features"))
+    # index.json для ЛЮБОГО features/ (корень + любой подкаталог) — не хардкодим сервисы
+    dirs = [os.path.join(web, "features")] + glob.glob(os.path.join(web, "*", "features"))
+    for fd in dirs:
+        write_index(fd)
 
     meta = {
         "train": date,

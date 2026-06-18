@@ -90,6 +90,14 @@ inject-defect: ## демо stop-the-line: make inject-defect DATE=26.06.20 BT=99
 	@$(RUNCTL) promote-test $(DATE)
 	@$(RUNCTL) stop $(DATE)
 
+crashtest: ## краш-тест: куча репо+веток+конфликтов -> собрать большой поезд (NSVC=5 NBT=24)
+	@echo "=== генерю мусор (репо/ветки/конфликты) ==="
+	@bts=$$(docker run --rm --network $(NETWORK) -v $(CURDIR)/.state:/state:ro -v $(CURDIR)/tools:/tools:ro \
+	    $(CITOOLS) bash /tools/crashtest.sh $(or $(NSVC),5) $(or $(NBT),24)); \
+	  echo "BTS=$$bts"; \
+	  echo "=== сборка большого поезда 99.99.01 ==="; \
+	  $(RUNCTL) dev 99.99.01 "$$bts"
+
 logs: ## логи GitLab/runner
 	@$(DC) logs --tail=60
 
@@ -119,4 +127,4 @@ reset: guard-docker ## полный сброс (тома, state, стенд-об
 	@echo "reset: всё снесено, поднимаю заново..."
 	@$(MAKE) --no-print-directory up
 
-.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status build dev test release stop resolve mkmerge rebuild inject-defect logs clock-init next-train tick down reset
+.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status build dev test release stop resolve mkmerge rebuild inject-defect crashtest logs clock-init next-train tick down reset

@@ -56,6 +56,12 @@ build_repo() {  # rdir name env date ids
     [ "$okm" = 1 ] && merge_units+=("$short")
   done < <(git -C "$rdir" for-each-ref --format='%(refname:short)' 'refs/remotes/origin/merge/*' 2>/dev/null)
 
+  # БТ-сеты РАЗРЕШЁННЫХ merge-веток (без маркеров) — чтобы подавлять устаревшие skeleton'ы
+  local resolved_sets=() mu
+  for mu in ${merge_units[@]+"${merge_units[@]}"}; do
+    has_markers "$rdir" "origin/${mu}" || resolved_sets+=("$(parse_bts "$mu" | tr '\n' ' ')")
+  done
+
   local feat_units=() id
   for id in $ids; do
     git -C "$rdir" rev-parse --verify -q "origin/feature/bt-${id}" >/dev/null 2>&1 && feat_units+=("feature/bt-${id}")
@@ -69,7 +75,20 @@ build_repo() {  # rdir name env date ids
   while :; do
     local progress=0 still=()
     for u in ${pending[@]+"${pending[@]}"}; do
-      if [[ "$u" == merge/* ]] && has_markers "$rdir" "origin/${u}"; then blocked+=" ${u}"; continue; fi
+      if [[ "$u" == merge/* ]] && has_markers "$rdir" "origin/${u}"; then
+        # неразрешённый skeleton: если его БТ ⊆ разрешённой merge-ветки -> устарел (эскалация), пропускаем
+        local ubts rs x covered=0
+        ubts="$(parse_bts "$u" | tr '\n' ' ')"
+        for rs in ${resolved_sets[@]+"${resolved_sets[@]}"}; do
+          local allin=1; for x in $ubts; do in_set "$x" "$rs" || allin=0; done
+          [ "$allin" = 1 ] && { covered=1; break; }
+        done
+        if [ "$covered" = 1 ]; then
+          log "    ${name}/${env}: пропуск устаревшего skeleton ${u} (покрыт разрешённой merge-веткой)"
+          continue
+        fi
+        blocked+=" ${u}"; continue
+      fi
       if git -C "$rdir" merge --no-edit --no-ff "origin/${u}" >/dev/null 2>&1; then
         progress=1; [[ "$u" == feature/bt-* ]] && merged_feats+=" ${u#feature/bt-}"
         log "    ${name}/${env}: merged ${u}"
