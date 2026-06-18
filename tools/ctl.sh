@@ -105,16 +105,34 @@ put_btset() {  # date "ids" -> commit bt-set -> reconcile. echoes pipeline statu
   wait_sha_pipeline "$sha"
 }
 
-stands_put() {  # slot date [slot date...] -> правит stands.yaml, коммит -> promote. echoes pipeline status
-  # По файлу на стенд: пишем только нужные stands/<slot>, ничего не читаем -> нет RMW-гонки.
-  local acts sha
-  acts="$(python3 - "$@" <<'PY'
-import sys, json
-a = sys.argv[1:]
-print(json.dumps([{"action":"update","file_path":"stands/"+a[i],"content":a[i+1]} for i in range(0,len(a),2)]))
-PY
-)"
-  sha="$(gl_commit "promote: $*" "$acts")"
+slot_cur() {  # env -> текущая привязка stands/<env> (пусто допустимо)
+  gapi "$GL/api/v4/projects/$REL/repository/files/$(enc "stands/$1")/raw?ref=master" 2>/dev/null | tr -d '[:space:]'
+}
+
+stands_put() {  # slot date [slot date...] -> правит ТОЛЬКО изменившиеся stands/<slot>, коммит -> reconcile
+  local label="$*" acts="[]" slot val cur sha
+  while [ "$#" -ge 2 ]; do
+    slot="$1"; val="$2"; shift 2
+    cur="$(slot_cur "$slot")"
+    [ "$cur" = "$val" ] && continue
+    acts="$(printf '%s' "$acts" | jq --arg fp "stands/$slot" --arg c "$val" '. + [{action:"update",file_path:$fp,content:$c}]')"
+  done
+  [ "$acts" = "[]" ] && { echo "noop"; return 0; }
+  sha="$(gl_commit "promote: $label" "$acts")"
+  [ -n "$sha" ] || { echo "nocommit"; return 0; }
+  wait_sha_pipeline "$sha"
+}
+
+cmd_dev() {  # date bts -> ОДИН коммит: bt-set + (если надо) stands/dev -> reconcile собирает dev. echoes status
+  local date="$1" bts="$2" btact curdev acts sha
+  if file_exists "trains/$date/bt-set.yaml"; then btact=update; else btact=create; fi
+  acts="$(jq -n --arg a "$btact" --arg p "trains/$date/bt-set.yaml" --arg c "$(btset_yaml "$date" "$bts")" \
+          '[{action:$a,file_path:$p,content:$c}]')"
+  curdev="$(slot_cur dev)"
+  if [ "$curdev" != "$date" ]; then
+    acts="$(printf '%s' "$acts" | jq --arg c "$date" '. + [{action:"update",file_path:"stands/dev",content:$c}]')"
+  fi
+  sha="$(gl_commit "dev: поезд ${date} (bts=${bts})" "$acts")"
   [ -n "$sha" ] || { echo "nocommit"; return 0; }
   wait_sha_pipeline "$sha"
 }
@@ -241,48 +259,48 @@ cmd_demo() {
   FAILED=0
   local T1=26.06.09 T2=26.06.11 T3=26.06.13 TC=26.06.16
 
-  echo "### 1. Поезд $T1: BT-16 + BT-25 -> reconcile -> dev"
-  echo "  pipeline: $(put_btset $T1 16,25)"
+  echo "### 1. Поезд $T1: BT-16 + BT-25 -> dev"
+  echo "  dev: $(cmd_dev $T1 16,25)"
   stand_has_bt dev 16 && ok "dev содержит BT-16" || fail "dev без BT-16"
   stand_has_bt dev 25 && ok "dev содержит BT-25" || fail "dev без BT-25"
 
   echo "### 2. + BT-30 (multi-repo svc-a+frontend)"
-  echo "  pipeline: $(put_btset $T1 16,25,30)"
+  echo "  dev: $(cmd_dev $T1 16,25,30)"
   stand_feature_exists dev "svc-a/features/bt-30.json" && ok "svc-a/bt-30 на dev" || fail "нет svc-a/bt-30"
   stand_feature_exists dev "features/bt-30.json" && ok "frontend/bt-30 на dev" || fail "нет frontend/bt-30"
 
   echo "### 3. Выдернуть BT-25 -> пересборка без него"
-  echo "  pipeline: $(put_btset $T1 16,30)"
+  echo "  dev: $(cmd_dev $T1 16,30)"
   stand_has_bt dev 25 && fail "BT-25 всё ещё на dev" || ok "BT-25 убран с dev"
   stand_has_bt dev 16 && ok "BT-16 остался" || fail "BT-16 пропал"
 
-  echo "### 3b. Триггер #2: push в feature/bt-16 -> сервисный CI дёргает reconcile"
+  echo "### 3b. Триггер #2: push в feature/bt-16 -> reconcile рефрешит привязанный dev"
   touch_feature svc-a bt-16 && ok "feature/bt-16 обновлён, reconcile дёрнут" || echo "  [warn] триггер не подтверждён"
 
-  echo "### 4. Вернуть BT-25, промоушн на тест-стенд (binding stands.yaml: test=$T1)"
-  put_btset $T1 16,25,30 >/dev/null
-  echo "  promote: $(stands_put test $T1)"
+  echo "### 4. Вернуть BT-25, стенд test=$T1 — собирается напрямую (минуя срез)"
+  cmd_dev $T1 16,25,30 >/dev/null
+  echo "  test: $(stands_put test $T1)"
   stand_has_bt test 16 && stand_has_bt test 25 && stand_has_bt test 30 && ok "test-стенд = состав поезда" || fail "test-стенд неверен"
 
-  echo "### 5. Промоушн предпрод+прод (stands.yaml: prepod=prod=$T1) + merge master + tag"
-  echo "  promote: $(stands_put prepod $T1 prod $T1)"
+  echo "### 5. Стенды prepod+prod=$T1 + merge master + tag"
+  echo "  release: $(stands_put prepod $T1 prod $T1)"
   stand_has_bt prod 16 && stand_has_bt prod 25 && stand_has_bt prod 30 && ok "prod-стенд = состав" || fail "prod-стенд неверен"
   [ "$(train_status $T1)" = shipped ] && ok "поезд $T1 shipped" || fail "статус $T1 != shipped"
   tag_exists "$SVC_A_ID" "shipped-$T1" && ok "tag shipped-$T1 в svc-a" || fail "нет тега в svc-a"
 
-  echo "### 6. Поезд $T2: BT-99 -> test -> stop-the-line"
-  put_btset $T2 99 >/dev/null
+  echo "### 6. Поезд $T2: BT-99 -> dev + test -> stop-the-line"
+  cmd_dev $T2 99 >/dev/null
   stands_put test $T2 >/dev/null
   echo "  stop: $(cmd_stop $T2)"
   [ "$(train_status $T2)" = stopped ] && ok "поезд $T2 stopped" || fail "статус $T2 != stopped"
   file_exists "trains/$T2/postmortem.md" && ok "postmortem.md создан" || fail "нет postmortem"
 
   echo "### 7. Carryover: BT-99 в следующий поезд $T3"
-  echo "  pipeline: $(put_btset $T3 99)"
+  echo "  dev: $(cmd_dev $T3 99)"
   stand_has_bt dev 99 && ok "BT-99 переехал в $T3 (dev)" || fail "BT-99 не переехал"
 
   echo "### 8. Конфликт bt-77/bt-78 -> skeleton -> resolve -> зелено, bt-ветки чистые"
-  st="$(put_btset $TC 77,78)"
+  st="$(cmd_dev $TC 77,78)"
   [ "$st" = failed ] && ok "reconcile упал, нужен резолв" || fail "ожидался failed, получили: $st"
   branch_exists "$SVC_A_ID" "merge/bt-77-bt-78" && ok "создана merge/bt-77-bt-78 (skeleton)" || fail "нет merge-ветки"
   echo "  resolve: $(cmd_resolve svc-a merge/bt-77-bt-78)"
@@ -296,7 +314,7 @@ cmd_demo() {
 
   echo "### 9. Дизъюнктные конфликты: 77/78 (shared.json) + 81/82 (flags.json) -> ОБЕ merge-ветки"
   local TD=26.06.18 osh ofl
-  st="$(put_btset $TD 77,78,81,82)"   # merge/bt-77-bt-78 готова; 81/82 -> новый skeleton, fail
+  st="$(cmd_dev $TD 77,78,81,82)"   # merge/bt-77-bt-78 готова; 81/82 -> новый skeleton, fail
   [ "$st" = failed ] && ok "reconcile создал skeleton merge/bt-81-bt-82" || fail "ожидался failed: $st"
   branch_exists "$SVC_A_ID" "merge/bt-81-bt-82" && ok "создана merge/bt-81-bt-82" || fail "нет merge/bt-81-bt-82"
   echo "  resolve: $(cmd_resolve svc-a merge/bt-81-bt-82)"
@@ -340,6 +358,7 @@ cmd_test() {  # быстрая проверка персистентного end
 
 case "${1:-}" in
   create-train|set-bts)   shift; put_btset "$@";;
+  dev)                    shift; cmd_dev "$1" "$2";;
   promote-test)           shift; stands_put test "$1";;
   promote-release)        shift; stands_put prepod "$1" prod "$1";;
   stop)                   shift; cmd_stop "$1";;

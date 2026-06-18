@@ -60,17 +60,20 @@ check: ## автономные ассерты end-state
 status: ## статус поездов и стендов
 	@$(RUNCTL) status
 
-# --- этапы поезда: команда = стенд (промоушн = git-правка stands.yaml -> CI) ---
-dev: ## собрать поезд на dev-стенд: make dev DATE=26.06.09 BTS=16,25
+# --- стенды: команда = стенд. Деплоится только то, на что указывает stands/<env>. ---
+build: ## определить поезд (bt-set) без привязки к стенду: make build DATE=26.06.30 BTS=42
 	@$(RUNCTL) create-train $(DATE) $(BTS)
 
-test: ## промоушн на тест-стенд (stands.yaml test=): make test DATE=26.06.09
+dev: ## bt-set + привязать dev -> собрать dev-стенд: make dev DATE=26.06.09 BTS=16,25
+	@$(RUNCTL) dev $(DATE) $(BTS)
+
+test: ## привязать test=DATE -> собрать test-стенд напрямую (минуя dev): make test DATE=26.06.09
 	@$(RUNCTL) promote-test $(DATE)
 
-release: ## промоушн предпрод(:8083)+прод(:8084) + merge master + tag: make release DATE=26.06.09
+release: ## привязать prepod+prod=DATE -> собрать предпрод+прод + merge master + tag
 	@$(RUNCTL) promote-release $(DATE)
 
-stop: ## stop-the-line (дефект на тесте): make stop DATE=26.06.09
+stop: ## stop-the-line (дефект): make stop DATE=26.06.09
 	@$(RUNCTL) stop $(DATE)
 
 resolve: ## демо-резолв существующей skeleton-ветки: make resolve REPO=svc-a MB=merge/bt-77-bt-78
@@ -116,4 +119,4 @@ reset: guard-docker ## полный сброс (тома, state, стенд-об
 	@echo "reset: всё снесено, поднимаю заново..."
 	@$(MAKE) --no-print-directory up
 
-.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status dev test release stop resolve mkmerge rebuild inject-defect logs clock-init next-train tick down reset
+.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status build dev test release stop resolve mkmerge rebuild inject-defect logs clock-init next-train tick down reset

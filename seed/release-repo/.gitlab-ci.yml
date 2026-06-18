@@ -1,7 +1,8 @@
-# Pipeline релиз-трейна (GitOps).
-#   изменился trains/<DATE>/bt-set.yaml -> reconcile (пересборка dev-<DATE>, деплой dev-стенда)
-#   изменился stands/<slot>          -> promote (довести ветки и задеплоить test/prepod/prod)
-#   ACTION=reconcile (multi-project trigger от feature-пуша) -> reconcile всех открытых поездов
+# Единый pipeline релиз-трейна (GitOps).
+# Desired state: stands/<env> (поезд на стенде) + trains/<DATE>/bt-set.yaml + feature/* + merge/*.
+# Любое изменение -> reconcile: пересобрать и задеплоить ПРИВЯЗАННЫЕ стенды
+# (master + БТ поезда + merge-ветки), симметрично для dev/test/prepod/prod.
+#   ACTION=reconcile (multi-project trigger от feature-пуша / rebuild) -> рефреш привязанных стендов
 variables:
   ACTION: ""
   TRAIN_DATE: ""
@@ -19,15 +20,6 @@ reconcile:
     - if: '$CI_PIPELINE_SOURCE == "push"'
       changes:
         - trains/**/bt-set.yaml
-  script:
-    - bash tools/reconcile.sh "$TRAIN_DATE"
-
-promote:
-  stage: run
-  rules:
-    - if: '$ACTION == "promote"'
-    - if: '$CI_PIPELINE_SOURCE == "push"'
-      changes:
         - stands/**/*
   script:
-    - bash tools/promote.sh
+    - bash tools/reconcile.sh "$TRAIN_DATE"

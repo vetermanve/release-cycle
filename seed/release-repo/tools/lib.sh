@@ -42,13 +42,15 @@ port_for() {  # port_for <env> (порты из group CI-vars STAND_*_PORT)
   esac
 }
 
-branch_for() {  # branch_for <env> <date>
-  # prod деплоится из release-<date> (тот же артефакт что предпрод; revert binding = git-native rollback).
-  # master мержится отдельно — для истории/тега, не как источник деплоя.
+branch_for() {  # branch_for <env> <date> — у каждого env своя ветка (симметрично, можно собирать независимо)
   case "$1" in
-    dev) echo "dev-$2";; test) echo "test-$2";; prepod) echo "release-$2";; prod) echo "release-$2";;
+    dev) echo "dev-$2";; test) echo "test-$2";; prepod) echo "prepod-$2";; prod) echo "prod-$2";;
     *) echo "unknown env: $1" >&2; return 1;;
   esac
+}
+
+slot_read() {  # текущая привязка стенда: stands/<env> -> дата (или пусто)
+  tr -d '[:space:]' < "${RELREPO_DIR}/stands/$1" 2>/dev/null || true
 }
 
 now_utc() { date -u +%FT%TZ; }
