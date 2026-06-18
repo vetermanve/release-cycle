@@ -50,17 +50,20 @@ def main():
     out.append("## Состав (БТ из Jira)")
     out.append("")
     if bts:
-        out.append("| БТ | Описание (Jira) | Статус (Jira) | Миграция |")
-        out.append("|----|-----------------|---------------|----------|")
+        out.append("| БТ | Описание (Jira) | Статус (Jira) |")
+        out.append("|----|-----------------|---------------|")
         for b in bts:
             bid = b["id"]
             summary, jstatus = jira_issue(bid)
-            out.append("| [BT-{0}]({1}/rest/api/2/issue/BT-{0}) | {2} | {3} | {4} |".format(
-                bid, JIRA, summary, jstatus, b.get("migration", "none")))
+            out.append("| [BT-{0}]({1}/rest/api/2/issue/BT-{0}) | {2} | {3} |".format(
+                bid, JIRA, summary, jstatus))
     else:
         out.append("_пусто_")
     out.append("")
     out.append("## Затронутые репозитории")
+    out.append("")
+    out.append("_Миграции детектятся по факту: `*-migrations` репо в каталоге, попавшие в сборку,"
+               " появятся ниже автоматически._")
     out.append("")
     if affected:
         out.append("```")

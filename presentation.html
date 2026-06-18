@@ -215,10 +215,8 @@ train: "26.06.09"
 status: open          # open | departed | shipped | stopped
 bts:
   - id: 16
-    migration: none
-  - id: 25
-    migration: none</code></pre>
-      <p class="mut">Меняешь файл -> CI пересобирает <code>dev-DATE</code>. Выдернуть БТ = убрать строку.</p>
+  - id: 25</code></pre>
+      <p class="mut">Просто список БТ. Меняешь -> CI пересобирает привязанные стенды. Миграции — по факту (репо <code>*-migrations</code> в каталоге), не в манифесте.</p>
     </div>
     <div>
       <h3>reconcile: сборка с нуля</h3>
@@ -243,15 +241,12 @@ flowchart TD
   <div class="grid g2">
     <div>
       <h3>Привязка стенд -&gt; поезд</h3>
-      <pre><code class="language-bash"># stands/dev
-26.06.09
-# stands/test
-26.06.09
-# stands/prepod  (пусто = ничего)
-
-# stands/prod
-26.06.09</code></pre>
-      <p class="mut">Деплоится <b>только</b> то, на что указывает <code>stands/&lt;env&gt;</code>. dev не особенный. Откат = <code>git revert</code> коммита.</p>
+      <pre><code class="language-ini"># отдельный файл на стенд, внутри — дата поезда:
+stands/dev      ->  26.06.09
+stands/test     ->  26.06.09
+stands/prepod   ->  (пусто = ничего)
+stands/prod     ->  26.06.09</code></pre>
+      <p class="mut">Один файл = один стенд (не общий yaml) -> нет гонок read-modify-write. Деплоится <b>только</b> привязанное. Откат = <code>git revert</code> коммита.</p>
     </div>
     <div>
       <h3>Команда = стенд</h3>

@@ -22,7 +22,7 @@ raw_file() {  # path -> content на stdout; ненулевой код если 
 ok()   { echo "  [OK] $*"; }
 fail() { echo "  [FAIL] $*"; FAILED=1; }
 
-btset_yaml() {  # date "id,id,id"
+btset_yaml() {  # date "id,id,id" — bt-set = просто список БТ. Миграции детектятся по факту (migrations-репо).
   python3 - "$1" "$2" <<'PY'
 import sys
 date, ids = sys.argv[1], sys.argv[2]
@@ -32,7 +32,6 @@ print('status: open')
 print('bts:')
 for i in ids:
     print('  - id: %s' % i)
-    print('    migration: none')
 PY
 }
 
