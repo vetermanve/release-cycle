@@ -5,10 +5,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/lib.sh"
 
-STANDS="${RELREPO_DIR}/stands.yaml"
-[ -f "$STANDS" ] || { log "нет stands.yaml"; exit 0; }
+STANDS_DIR="${RELREPO_DIR}/stands"
 
-slot_date() { python3 "${HERE}/cfg.py" field "$STANDS" "$1"; }
+# Binding по файлу на стенд: stands/<slot> содержит дату поезда (или пусто).
+slot_date() { tr -d '[:space:]' < "${STANDS_DIR}/$1" 2>/dev/null || true; }
 
 affected_names() {  # <date>
   local lock="${RELREPO_DIR}/trains/$1/affected-repos.lock"

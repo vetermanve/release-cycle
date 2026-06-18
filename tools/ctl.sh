@@ -8,6 +8,17 @@ REL="$RELEASE_REPO_ID"
 
 gapi() { curl -sS -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$@"; }
 enc() { python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$1"; }
+
+# Надёжное чтение файла с master: ретраи, непустой результат (иначе read-modify-write затрёт).
+raw_file() {  # path -> content на stdout; ненулевой код если стойко пусто
+  local e out; e="$(enc "$1")"
+  for _ in $(seq 1 6); do
+    out="$(gapi "$GL/api/v4/projects/$REL/repository/files/$e/raw?ref=master")"
+    [ -n "$out" ] && { printf '%s' "$out"; return 0; }
+    sleep 1
+  done
+  return 1
+}
 ok()   { echo "  [OK] $*"; }
 fail() { echo "  [FAIL] $*"; FAILED=1; }
 
@@ -82,30 +93,22 @@ put_btset() {  # date "ids" -> commit bt-set -> reconcile. echoes pipeline statu
 }
 
 stands_put() {  # slot date [slot date...] -> правит stands.yaml, коммит -> promote. echoes pipeline status
-  local e cur new before res
-  e="$(enc stands.yaml)"
-  cur="$(gapi "$GL/api/v4/projects/$REL/repository/files/$e/raw?ref=master")"
-  new="$(printf '%s' "$cur" | python3 - "$@" <<'PY'
-import sys, yaml
-data = yaml.safe_load(sys.stdin.read()) or {}
+  # По файлу на стенд: пишем только нужные stands/<slot>, ничего не читаем -> нет RMW-гонки.
+  local acts sha
+  acts="$(python3 - "$@" <<'PY'
+import sys, json
 a = sys.argv[1:]
-for i in range(0, len(a), 2):
-    data[a[i]] = a[i+1]
-for k in ("test", "prepod", "prod"):
-    data.setdefault(k, "")
-print(yaml.safe_dump(data, allow_unicode=True, default_flow_style=False), end="")
+print(json.dumps([{"action":"update","file_path":"stands/"+a[i],"content":a[i+1]} for i in range(0,len(a),2)]))
 PY
 )"
-  local sha
-  sha="$(gl_commit "promote: $*" \
-    "$(jq -n --arg p stands.yaml --arg c "$new" '[{action:"update",file_path:$p,content:$c}]')")"
+  sha="$(gl_commit "promote: $*" "$acts")"
   [ -n "$sha" ] || { echo "nocommit"; return 0; }
   wait_sha_pipeline "$sha"
 }
 
 cmd_stop() {  # date -> status=stopped + postmortem одним коммитом (reconcile no-op: status!=open)
   local date="$1" cur new pm pact sha
-  cur="$(gapi "$GL/api/v4/projects/$REL/repository/files/$(enc "trains/$date/bt-set.yaml")/raw?ref=master")"
+  cur="$(raw_file "trains/$date/bt-set.yaml")" || { echo "fetch-failed"; return 1; }
   new="$(printf '%s' "$cur" | python3 -c 'import sys,re; print(re.sub(r"(?m)^status:.*$","status: stopped",sys.stdin.read()), end="")')"
   pm="$(printf '# Postmortem поезда %s\n\n- Гейт: FAILED (тест-стенд)\n- Поезд остановлен (stop-the-line), не реанимируется.\n- Дефектный БТ выпадает, чинится в feature-ветке, едет следующим поездом.\n' "$date")"
   if file_exists "trains/$date/postmortem.md"; then pact=update; else pact=create; fi
