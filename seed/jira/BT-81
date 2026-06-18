@@ -1,0 +1,10 @@
+{
+  "key": "BT-81",
+  "fields": {
+    "summary": "Флаг фичи A (flags.json)",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Дизъюнктный конфликт по flags.json (пара 81/82), независим от shared.json (77/78)."
+  }
+}

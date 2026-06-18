@@ -1,0 +1,10 @@
+{
+  "key": "BT-82",
+  "fields": {
+    "summary": "Флаг фичи B (flags.json)",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Конфликтная пара к BT-81 по flags.json."
+  }
+}
