@@ -91,14 +91,13 @@ main() {
     return
   fi
 
-  # Иначе: определить изменённые поезда из триггернувшего коммита (push в bt-set).
-  local changed
-  changed="$(cd "${RELREPO_DIR}" && git diff --name-only HEAD~1 HEAD 2>/dev/null \
-    | sed -nE 's#^trains/([^/]+)/bt-set.yaml$#\1#p' | sort -u)"
-
-  local targets="$changed"
+  # push в bt-set -> только изменённый поезд; trigger (feature-пуш) -> все открытые.
+  local targets=""
+  if [ "${CI_PIPELINE_SOURCE:-}" = "push" ]; then
+    targets="$(cd "${RELREPO_DIR}" && git diff --name-only HEAD~1 HEAD 2>/dev/null \
+      | sed -nE 's#^trains/([^/]+)/bt-set.yaml$#\1#p' | sort -u)"
+  fi
   if [ -z "$targets" ]; then
-    # фолбэк (например, триггер от feature-пуша): все открытые поезда
     for d in "${RELREPO_DIR}"/trains/*/bt-set.yaml; do
       [ -e "$d" ] && targets+=" $(basename "$(dirname "$d")")"
     done

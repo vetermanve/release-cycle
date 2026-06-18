@@ -60,23 +60,23 @@ check: ## автономные ассерты end-state
 status: ## статус поездов и стендов
 	@$(RUNCTL) status
 
-# --- этапы поезда: команда = стенд, куда катит ---
+# --- этапы поезда: команда = стенд (промоушн = git-правка stands.yaml -> CI) ---
 dev: ## собрать поезд на dev-стенд: make dev DATE=26.06.09 BTS=16,25
 	@$(RUNCTL) create-train $(DATE) $(BTS)
 
-test: ## отправить на тест-стенд: make test DATE=26.06.09
-	@$(RUNCTL) depart $(DATE)
+test: ## промоушн на тест-стенд (stands.yaml test=): make test DATE=26.06.09
+	@$(RUNCTL) promote-test $(DATE)
 
-release: ## предпрод(:8083) + прод(:8084) + merge master + tag: make release DATE=26.06.09
-	@$(RUNCTL) gate $(DATE) pass
+release: ## промоушн предпрод(:8083)+прод(:8084) + merge master + tag: make release DATE=26.06.09
+	@$(RUNCTL) promote-release $(DATE)
 
 stop: ## stop-the-line (дефект на тесте): make stop DATE=26.06.09
-	@$(RUNCTL) gate $(DATE) fail
+	@$(RUNCTL) stop $(DATE)
 
 inject-defect: ## демо stop-the-line: make inject-defect DATE=26.06.20 BT=99
 	@$(RUNCTL) create-train $(DATE) $(BT)
-	@$(RUNCTL) depart $(DATE)
-	@$(RUNCTL) gate $(DATE) fail
+	@$(RUNCTL) promote-test $(DATE)
+	@$(RUNCTL) stop $(DATE)
 
 logs: ## логи GitLab/runner
 	@$(DC) logs --tail=60

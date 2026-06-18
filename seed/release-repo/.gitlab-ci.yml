@@ -1,11 +1,10 @@
-# Pipeline релиз-трейна. Управляется переменной ACTION.
-#   ACTION=reconcile (дефолт) -> пересборка dev-<DATE> (или всех открытых поездов)
-#   ACTION=depart  TRAIN_DATE=.. -> cut test-<DATE>, deploy test-стенд
-#   ACTION=gate    TRAIN_DATE=.. GATE_RESULT=pass|fail -> промоушн или stop-the-line
+# Pipeline релиз-трейна (GitOps).
+#   изменился trains/<DATE>/bt-set.yaml -> reconcile (пересборка dev-<DATE>, деплой dev-стенда)
+#   изменился stands.yaml             -> promote (довести ветки и задеплоить test/prepod/prod)
+#   ACTION=reconcile (multi-project trigger от feature-пуша) -> reconcile всех открытых поездов
 variables:
-  ACTION: "reconcile"
+  ACTION: ""
   TRAIN_DATE: ""
-  GATE_RESULT: ""
 
 default:
   image: ci-tools:latest
@@ -17,19 +16,18 @@ reconcile:
   stage: run
   rules:
     - if: '$ACTION == "reconcile"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - trains/**/bt-set.yaml
   script:
     - bash tools/reconcile.sh "$TRAIN_DATE"
 
-depart:
+promote:
   stage: run
   rules:
-    - if: '$ACTION == "depart"'
+    - if: '$ACTION == "promote"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - stands.yaml
   script:
-    - bash tools/train.sh depart "$TRAIN_DATE"
-
-gate:
-  stage: run
-  rules:
-    - if: '$ACTION == "gate"'
-  script:
-    - bash tools/train.sh gate "$TRAIN_DATE" "$GATE_RESULT"
+    - bash tools/promote.sh

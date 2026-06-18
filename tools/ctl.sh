@@ -49,29 +49,72 @@ wait_new_pipeline() {  # before_id -> echoes "pid status"
   echo "$pid $(wait_pipeline "$pid")"
 }
 
-put_btset() {  # date "ids" -> commits bt-set, triggers reconcile, waits. echoes pipeline status
-  local date="$1" ids="$2" path content e method code before res
-  path="trains/${date}/bt-set.yaml"; e="$(enc "$path")"
-  content="$(btset_yaml "$date" "$ids")"
-  code="$(gapi -o /dev/null -w '%{http_code}' "$GL/api/v4/projects/$REL/repository/files/$e?ref=master")"
-  method=POST; [ "$code" = "200" ] && method=PUT
-  before="$(latest_pipeline_id)"
-  gapi -X "$method" "$GL/api/v4/projects/$REL/repository/files/$e" \
-    -d "branch=master" --data-urlencode "content=$content" \
-    --data-urlencode "commit_message=train(${date}): set bts=${ids}" >/dev/null
-  res="$(wait_new_pipeline "$before")"
-  echo "${res#* }"
+# Атомарный коммит через Commits API -> возвращает sha (надёжнее Files API: знаем свой коммит).
+gl_commit() {  # message actions_json -> echoes sha
+  gapi -X POST "$GL/api/v4/projects/$REL/repository/commits" \
+    -H "Content-Type: application/json" \
+    --data "$(jq -n --arg b master --arg m "$1" --argjson acts "$2" \
+              '{branch:$b, commit_message:$m, actions:$acts}')" \
+    | jq -r '.id // empty'
 }
 
-trigger_action() {  # action date [gate] -> echoes pipeline status
-  local action="$1" date="$2" gate="${3:-}" pid
-  pid="$(curl -sS -X POST \
-    -F "token=$TRIGGER_TOKEN" -F "ref=master" \
-    -F "variables[ACTION]=$action" -F "variables[TRAIN_DATE]=$date" \
-    -F "variables[GATE_RESULT]=$gate" \
-    "$GL/api/v4/projects/$REL/trigger/pipeline" | jq -r '.id // empty')"
-  [ -n "$pid" ] || { echo "notrigger"; return 0; }
+# Ждать пайплайн ИМЕННО нашего коммита (по sha) -> не путаем со skip-ci пайплайнами.
+wait_sha_pipeline() {  # sha -> echoes status
+  local sha="$1" pid
+  for _ in $(seq 1 60); do
+    pid="$(gapi "$GL/api/v4/projects/$REL/pipelines?sha=$sha" | jq -r '.[0].id // empty')"
+    [ -n "$pid" ] && break
+    sleep 2
+  done
+  [ -n "$pid" ] || { echo "nopipeline"; return 0; }
   wait_pipeline "$pid"
+}
+
+put_btset() {  # date "ids" -> commit bt-set -> reconcile. echoes pipeline status
+  local date="$1" ids="$2" path content act sha
+  path="trains/${date}/bt-set.yaml"
+  content="$(btset_yaml "$date" "$ids")"
+  if file_exists "$path"; then act=update; else act=create; fi
+  sha="$(gl_commit "train(${date}): set bts=${ids}" \
+    "$(jq -n --arg a "$act" --arg p "$path" --arg c "$content" '[{action:$a,file_path:$p,content:$c}]')")"
+  [ -n "$sha" ] || { echo "nocommit"; return 0; }
+  wait_sha_pipeline "$sha"
+}
+
+stands_put() {  # slot date [slot date...] -> правит stands.yaml, коммит -> promote. echoes pipeline status
+  local e cur new before res
+  e="$(enc stands.yaml)"
+  cur="$(gapi "$GL/api/v4/projects/$REL/repository/files/$e/raw?ref=master")"
+  new="$(printf '%s' "$cur" | python3 - "$@" <<'PY'
+import sys, yaml
+data = yaml.safe_load(sys.stdin.read()) or {}
+a = sys.argv[1:]
+for i in range(0, len(a), 2):
+    data[a[i]] = a[i+1]
+for k in ("test", "prepod", "prod"):
+    data.setdefault(k, "")
+print(yaml.safe_dump(data, allow_unicode=True, default_flow_style=False), end="")
+PY
+)"
+  local sha
+  sha="$(gl_commit "promote: $*" \
+    "$(jq -n --arg p stands.yaml --arg c "$new" '[{action:"update",file_path:$p,content:$c}]')")"
+  [ -n "$sha" ] || { echo "nocommit"; return 0; }
+  wait_sha_pipeline "$sha"
+}
+
+cmd_stop() {  # date -> status=stopped + postmortem одним коммитом (reconcile no-op: status!=open)
+  local date="$1" cur new pm pact sha
+  cur="$(gapi "$GL/api/v4/projects/$REL/repository/files/$(enc "trains/$date/bt-set.yaml")/raw?ref=master")"
+  new="$(printf '%s' "$cur" | python3 -c 'import sys,re; print(re.sub(r"(?m)^status:.*$","status: stopped",sys.stdin.read()), end="")')"
+  pm="$(printf '# Postmortem поезда %s\n\n- Гейт: FAILED (тест-стенд)\n- Поезд остановлен (stop-the-line), не реанимируется.\n- Дефектный БТ выпадает, чинится в feature-ветке, едет следующим поездом.\n' "$date")"
+  if file_exists "trains/$date/postmortem.md"; then pact=update; else pact=create; fi
+  sha="$(gl_commit "stop($date): stop-the-line" \
+    "$(jq -n --arg bp "trains/$date/bt-set.yaml" --arg bc "$new" \
+             --arg pa "$pact" --arg pp "trains/$date/postmortem.md" --arg pc "$pm" \
+       '[{action:"update",file_path:$bp,content:$bc},{action:$pa,file_path:$pp,content:$pc}]')")"
+  wait_sha_pipeline "$sha" >/dev/null
+  echo "stopped"
 }
 
 train_status() {  # date
@@ -154,21 +197,21 @@ cmd_demo() {
   echo "### 3b. Триггер #2: push в feature/bt-16 -> сервисный CI дёргает reconcile"
   touch_feature svc-a bt-16 && ok "feature/bt-16 обновлён, reconcile дёрнут" || echo "  [warn] триггер не подтверждён"
 
-  echo "### 4. Вернуть BT-25, отправить поезд (depart) -> test-стенд"
+  echo "### 4. Вернуть BT-25, промоушн на тест-стенд (binding stands.yaml: test=$T1)"
   put_btset $T1 16,25,30 >/dev/null
-  echo "  depart: $(trigger_action depart $T1)"
+  echo "  promote: $(stands_put test $T1)"
   stand_has_bt test 16 && stand_has_bt test 25 && stand_has_bt test 30 && ok "test-стенд = состав поезда" || fail "test-стенд неверен"
 
-  echo "### 5. Gate PASS -> prepod + prod + merge master + tag"
-  echo "  gate: $(trigger_action gate $T1 pass)"
+  echo "### 5. Промоушн предпрод+прод (stands.yaml: prepod=prod=$T1) + merge master + tag"
+  echo "  promote: $(stands_put prepod $T1 prod $T1)"
   stand_has_bt prod 16 && stand_has_bt prod 25 && stand_has_bt prod 30 && ok "prod-стенд = состав" || fail "prod-стенд неверен"
   [ "$(train_status $T1)" = shipped ] && ok "поезд $T1 shipped" || fail "статус $T1 != shipped"
   tag_exists "$SVC_A_ID" "shipped-$T1" && ok "tag shipped-$T1 в svc-a" || fail "нет тега в svc-a"
 
-  echo "### 6. Поезд $T2: BT-99, depart, Gate FAIL -> stop-the-line"
+  echo "### 6. Поезд $T2: BT-99 -> test -> stop-the-line"
   put_btset $T2 99 >/dev/null
-  trigger_action depart $T2 >/dev/null
-  echo "  gate fail: $(trigger_action gate $T2 fail)"
+  stands_put test $T2 >/dev/null
+  echo "  stop: $(cmd_stop $T2)"
   [ "$(train_status $T2)" = stopped ] && ok "поезд $T2 stopped" || fail "статус $T2 != stopped"
   file_exists "trains/$T2/postmortem.md" && ok "postmortem.md создан" || fail "нет postmortem"
 
@@ -212,11 +255,12 @@ cmd_test() {  # быстрая проверка персистентного end
 }
 
 case "${1:-}" in
-  create-train|set-bts) shift; put_btset "$@";;
-  depart)  shift; trigger_action depart "$@";;
-  gate)    shift; trigger_action gate "$@";;
+  create-train|set-bts)   shift; put_btset "$@";;
+  promote-test)           shift; stands_put test "$1";;
+  promote-release)        shift; stands_put prepod "$1" prod "$1";;
+  stop)                   shift; cmd_stop "$1";;
   status)  cmd_status;;
   demo)    cmd_demo;;
   test)    cmd_test;;
-  *) echo "usage: ctl.sh {create-train|set-bts|depart|gate|status|demo|test}"; exit 1;;
+  *) echo "usage: ctl.sh {create-train|promote-test|promote-release|stop|status|demo|test}"; exit 1;;
 esac
