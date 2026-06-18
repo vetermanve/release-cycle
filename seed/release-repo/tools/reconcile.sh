@@ -13,6 +13,14 @@ parse_bts() { echo "$1" | grep -oE 'bt-[0-9]+' | grep -oE '[0-9]+'; }
 in_set() { echo " $2 " | grep -q " $1 "; }
 has_markers() { git -C "$1" grep -I -q -e '<<<<<<<' "$2" 2>/dev/null; }
 
+# Затронут ли репо поездом — БЕЗ клона (ls-remote). rc 0 = есть feature/bt-<id> из набора -> клонировать.
+repo_affected() {  # name "ids..."
+  local name="$1" ids="$2" refs id
+  refs="$(git ls-remote --heads "$(auth_url "$name")" 'feature/bt-*' 2>/dev/null)" || return 0  # не смогли -> на всякий клон
+  for id in $ids; do echo "$refs" | grep -q "refs/heads/feature/bt-${id}\$" && return 0; done
+  return 1
+}
+
 BUILD_SHA=""; BUILD_BTS=""; CONFLICT_MSG=""
 
 handle_pair() {  # rdir name env date merged_feats yId
@@ -135,6 +143,7 @@ assemble_stand() {  # env date
   local conflict=0 name mount rc
   while IFS=$'\t' read -r name mount; do
     [ -n "$name" ] || continue
+    if ! repo_affected "$name" "$ids"; then log "    ${name}: не затронут (ls-remote, без клона)"; continue; fi
     local rdir="${work}/${name}"
     git clone -q "$(auth_url "$name")" "$rdir"
     git -C "$rdir" config user.email ci@polygon.local; git -C "$rdir" config user.name polygon-ci
