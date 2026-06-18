@@ -1,0 +1,10 @@
+{
+  "key": "BT-25",
+  "fields": {
+    "summary": "Экспорт отчётов в CSV",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-b" } ],
+    "description": "Добавляет выгрузку отчётов в CSV."
+  }
+}

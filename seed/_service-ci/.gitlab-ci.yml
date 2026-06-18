@@ -1,0 +1,13 @@
+# Сервисный CI: push в feature/bt-* дёргает reconcile релиз-трейна (multi-project trigger).
+# Сам в стенд-ветки не мержит — только сигналит. Merge-логика живёт в релиз-трейне.
+trigger-reconcile:
+  image: ci-tools:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\/bt-/'
+  script:
+    - >
+      curl -sS --fail-with-body -X POST
+      -F "token=${RELEASE_TRAIN_TRIGGER_TOKEN}"
+      -F "ref=master"
+      -F "variables[ACTION]=reconcile"
+      "${GITLAB_INTERNAL_URL}/api/v4/projects/${RELEASE_REPO_ID}/trigger/pipeline"

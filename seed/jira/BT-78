@@ -1,0 +1,10 @@
+{
+  "key": "BT-78",
+  "fields": {
+    "summary": "Смена владельца shared-конфига (B)",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Конфликтная пара к BT-77."
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "key": "BT-99",
+  "fields": {
+    "summary": "Рискованная фича",
+    "status": { "name": "В тестировании" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-b" } ],
+    "description": "Используется для демонстрации stop-the-line."
+  }
+}

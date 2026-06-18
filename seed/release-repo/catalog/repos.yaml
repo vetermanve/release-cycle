@@ -1,0 +1,10 @@
+# Репозитории, которые reconciler сканирует на feature/bt-<N> и мержит в стенд-ветки.
+# Порядок = порядок сборки webroot на стенде (frontend в корень, бэкенды в подпапки).
+group: polygon
+repos:
+  - name: frontend
+    mount: ""          # в корень webroot
+  - name: svc-a
+    mount: "svc-a"
+  - name: svc-b
+    mount: "svc-b"

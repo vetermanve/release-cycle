@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Release polygon stand</title>
+  <style>
+    :root { font-family: -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin: 0; background: #0f1419; color: #e6edf3; }
+    header { padding: 16px 24px; }
+    .env { display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 700;
+           letter-spacing: 1px; text-transform: uppercase; }
+    .env.dev { background: #1f6feb; }
+    .env.test { background: #d29922; color: #1a1a1a; }
+    .env.prepod { background: #8957e5; }
+    .env.prod { background: #2ea043; }
+    .env.unknown { background: #6e7681; }
+    .meta { color: #8b949e; font-size: 14px; margin-top: 8px; }
+    .meta b { color: #e6edf3; }
+    .cols { display: flex; gap: 16px; padding: 0 24px 24px; flex-wrap: wrap; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+            padding: 16px; min-width: 260px; flex: 1; }
+    .card h2 { margin: 0 0 12px; font-size: 16px; color: #58a6ff; }
+    .bt { background: #21262d; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+    .bt .id { font-weight: 700; color: #7ee787; }
+    .bt .title { color: #c9d1d9; font-size: 14px; }
+    .empty { color: #6e7681; font-style: italic; }
+    .err { color: #f85149; font-size: 13px; }
+    .tick { color: #6e7681; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span id="env" class="env unknown">unknown</span>
+    <div class="meta">
+      train <b id="train">-</b> &middot; БТ в поезде: <b id="btcount">-</b>
+      &middot; обновлено <span id="gen">-</span> &middot; <span class="tick" id="tick">tick -</span>
+    </div>
+  </header>
+  <div class="cols">
+    <div class="card"><h2>frontend</h2><div id="frontend"></div></div>
+    <div class="card"><h2>svc-a</h2><div id="svc-a"></div></div>
+    <div class="card"><h2>svc-b</h2><div id="svc-b"></div></div>
+  </div>
+
+  <script>
+    let ticks = 0;
+
+    async function getJSON(url) {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error(url + " -> " + r.status);
+      return r.json();
+    }
+
+    // base: "" для frontend (корень), "svc-a/", "svc-b/" для бэкендов
+    async function loadFeatures(base) {
+      const idx = await getJSON(base + "features/index.json");
+      const files = idx.files || [];
+      const items = [];
+      for (const f of files) {
+        try { items.push(await getJSON(base + "features/" + f)); }
+        catch (e) { /* пропускаем битый файл */ }
+      }
+      return items;
+    }
+
+    function renderCard(elId, items) {
+      const el = document.getElementById(elId);
+      if (!items.length) { el.innerHTML = '<div class="empty">нет БТ</div>'; return; }
+      el.innerHTML = items.map(it =>
+        '<div class="bt"><span class="id">' + (it.bt !== undefined ? ("BT-" + it.bt) : "?") +
+        '</span> <span class="title">' + (it.title || "") + '</span></div>'
+      ).join("");
+    }
+
+    async function refresh() {
+      ticks++;
+      document.getElementById("tick").textContent = "tick " + ticks;
+      try {
+        const meta = await getJSON("meta.json");
+        const env = (meta.env || "unknown");
+        const envEl = document.getElementById("env");
+        envEl.textContent = env;
+        envEl.className = "env " + env;
+        document.getElementById("train").textContent = meta.train || "-";
+        document.getElementById("btcount").textContent =
+          Array.isArray(meta.bts) ? meta.bts.join(", ") || "пусто" : "-";
+        document.getElementById("gen").textContent = meta.generated || "-";
+      } catch (e) {
+        document.getElementById("env").textContent = "no meta";
+      }
+      for (const [el, base] of [["frontend", ""], ["svc-a", "svc-a/"], ["svc-b", "svc-b/"]]) {
+        try { renderCard(el, await loadFeatures(base)); }
+        catch (e) { document.getElementById(el).innerHTML = '<div class="err">' + e.message + '</div>'; }
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

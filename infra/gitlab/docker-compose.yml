@@ -1,0 +1,72 @@
+name: relcycle
+
+networks:
+  gitlabnet:
+    name: ${NETWORK}
+
+volumes:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
+  runner_config:
+
+services:
+  gitlab:
+    image: ${GITLAB_IMAGE}
+    container_name: relcycle_gitlab
+    hostname: gitlab
+    restart: unless-stopped
+    shm_size: "256m"
+    networks:
+      - gitlabnet
+    ports:
+      - "${GITLAB_HTTP_PORT}:${GITLAB_HTTP_PORT}"
+      - "${GITLAB_SSH_PORT}:22"
+    environment:
+      GITLAB_ROOT_PASSWORD: "${GITLAB_ROOT_PASSWORD}"
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:${GITLAB_HTTP_PORT}'
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT}
+        nginx['listen_port'] = ${GITLAB_HTTP_PORT}
+        nginx['listen_https'] = false
+        puma['worker_processes'] = 0
+        sidekiq['max_concurrency'] = 5
+        prometheus_monitoring['enable'] = false
+        gitlab_rails['usage_ping_enabled'] = false
+        registry['enable'] = false
+        gitlab_kas['enable'] = false
+        gitlab_pages['enable'] = false
+        gitlab_rails['gitlab_default_projects_features_container_registry'] = false
+        gitlab_rails['initial_root_password'] = '${GITLAB_ROOT_PASSWORD}'
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:${GITLAB_HTTP_PORT}/-/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 300s
+
+  runner:
+    image: ${RUNNER_IMAGE}
+    container_name: relcycle_runner
+    restart: unless-stopped
+    networks:
+      - gitlabnet
+    depends_on:
+      - gitlab
+    volumes:
+      - runner_config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Mock Jira: отдаёт БТ Jira-образным JSON по /rest/api/2/issue/BT-<N>.
+  # Моделирует "описания БТ живут в Jira, тянем по API". Файлы в seed/jira/.
+  mock-jira:
+    image: ${NGINX_IMAGE}
+    container_name: relcycle_mock_jira
+    restart: unless-stopped
+    networks:
+      - gitlabnet
+    ports:
+      - "${MOCK_JIRA_PORT}:80"
+    volumes:
+      - ../../seed/jira:/usr/share/nginx/html/rest/api/2/issue:ro
+      - ../mock-jira/default.conf:/etc/nginx/conf.d/default.conf:ro

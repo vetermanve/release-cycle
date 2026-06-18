@@ -1,0 +1,35 @@
+# Pipeline релиз-трейна. Управляется переменной ACTION.
+#   ACTION=reconcile (дефолт) -> пересборка dev-<DATE> (или всех открытых поездов)
+#   ACTION=depart  TRAIN_DATE=.. -> cut test-<DATE>, deploy test-стенд
+#   ACTION=gate    TRAIN_DATE=.. GATE_RESULT=pass|fail -> промоушн или stop-the-line
+variables:
+  ACTION: "reconcile"
+  TRAIN_DATE: ""
+  GATE_RESULT: ""
+
+default:
+  image: ci-tools:latest
+
+stages:
+  - run
+
+reconcile:
+  stage: run
+  rules:
+    - if: '$ACTION == "reconcile"'
+  script:
+    - bash tools/reconcile.sh "$TRAIN_DATE"
+
+depart:
+  stage: run
+  rules:
+    - if: '$ACTION == "depart"'
+  script:
+    - bash tools/train.sh depart "$TRAIN_DATE"
+
+gate:
+  stage: run
+  rules:
+    - if: '$ACTION == "gate"'
+  script:
+    - bash tools/train.sh gate "$TRAIN_DATE" "$GATE_RESULT"

@@ -1,0 +1,7 @@
+# Каденс релиз-поездов.
+# mode: biweekly  -> поезда по вторникам и четвергам (days: 2,4)
+# mode: daily     -> каждый рабочий день (пн-пт)
+mode: biweekly
+depart_time: "10:00"
+biweekly_days: [2, 4]   # 1=пн ... 7=вс
+workdays: [1, 2, 3, 4, 5]

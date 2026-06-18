@@ -1,0 +1,6 @@
+{
+  "bt": 25,
+  "service": "svc-b",
+  "title": "Экспорт отчётов в CSV",
+  "value": "csv-export"
+}

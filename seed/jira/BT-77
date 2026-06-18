@@ -1,0 +1,10 @@
+{
+  "key": "BT-77",
+  "fields": {
+    "summary": "Смена владельца shared-конфига (A)",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Демонстрация конфликта: BT-77 и BT-78 меняют одну строку shared.json."
+  }
+}

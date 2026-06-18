@@ -1,0 +1,10 @@
+{
+  "key": "BT-30",
+  "fields": {
+    "summary": "Единый профиль пользователя",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" }, { "name": "frontend" } ],
+    "description": "Multi-repo БТ: backend-API в svc-a + UI во frontend (одноимённые ветки feature/bt-30)."
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "key": "BT-16",
+  "fields": {
+    "summary": "Новый прайсинг-движок",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Замена движка расчёта цены на pricing-v2. Backend-only."
+  }
+}
