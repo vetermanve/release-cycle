@@ -119,22 +119,47 @@ PY
   wait_sha_pipeline "$sha"
 }
 
-cmd_resolve() {  # repo mb -> ДЕМО-резолв merge-ветки (детерминированно) + push.
-  # Реально: разраб чекаутит mb (от мастера, с 2 БТ), резолвит маркеры руками, пушит.
+# демо-резолюция shared.json: owner = bt-X+bt-Y[+bt-Z] из имени merge-ветки
+resolve_shared() {  # workdir mb
+  local d="$1" mb="$2" owner
+  owner="$(echo "$mb" | grep -oE 'bt-[0-9]+' | sort -u | paste -sd+ -)"
+  if grep -q '<<<<<<<' "$d/shared.json" 2>/dev/null; then
+    printf '{\n  "owner": "%s",\n  "counter": 0\n}\n' "$owner" > "$d/shared.json"
+  fi
+}
+
+cmd_resolve() {  # repo mb -> ДЕМО-резолв СУЩЕСТВУЮЩЕЙ skeleton-ветки (от reconcile) + push.
   local repo="$1" mb="$2" d url
   url="http://oauth2:$GITLAB_TOKEN@gitlab:8929/$GROUP/$repo.git"
-  d="$(mktemp -d)"
-  git clone -q "$url" "$d"
+  d="$(mktemp -d)"; git clone -q "$url" "$d"
   git -C "$d" checkout -q "$mb"
   git -C "$d" config user.email dev@polygon.local; git -C "$d" config user.name dev
-  # демо-резолюция конфликта в shared.json: объединить owner
-  if grep -q '<<<<<<<' "$d/shared.json" 2>/dev/null; then
-    printf '{\n  "owner": "bt-77+bt-78",\n  "counter": 0\n}\n' > "$d/shared.json"
-  fi
+  resolve_shared "$d" "$mb"
   git -C "$d" add -A
   git -C "$d" commit -q -m "resolve: разрешить конфликт в ${mb}" || true
   git -C "$d" push -q "$url" "$mb"
   echo "resolved ${mb}"
+}
+
+cmd_mkmerge() {  # repo "77,78,79" -> создать merge-ветку С НУЛЯ от master, влить БТ, резолв, push.
+  # Ручной путь разработчика (в т.ч. для троек, что reconcile сам не создаёт).
+  local repo="$1" csv="$2" d url ids mb n
+  url="http://oauth2:$GITLAB_TOKEN@gitlab:8929/$GROUP/$repo.git"
+  ids="$(echo "$csv" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n)"
+  mb="merge/$(echo "$ids" | sed 's/^/bt-/' | paste -sd- -)"   # merge/bt-77-bt-78-bt-79
+  d="$(mktemp -d)"; git clone -q "$url" "$d"
+  git -C "$d" config user.email dev@polygon.local; git -C "$d" config user.name dev
+  git -C "$d" checkout -q -B "$mb" origin/master
+  # мержим по одной, конфликт резолвим И коммитим СРАЗУ (иначе следующий merge не стартует)
+  for n in $ids; do
+    if ! git -C "$d" merge --no-edit "origin/feature/bt-${n}" >/dev/null 2>&1; then
+      resolve_shared "$d" "$mb"
+      git -C "$d" add -A
+      git -C "$d" commit -q --no-edit
+    fi
+  done
+  git -C "$d" push -q -f "$url" "$mb"
+  echo "created+resolved ${mb}"
 }
 
 cmd_stop() {  # date -> status=stopped + postmortem одним коммитом (reconcile no-op: status!=open)
@@ -303,9 +328,10 @@ case "${1:-}" in
   promote-release)        shift; stands_put prepod "$1" prod "$1";;
   stop)                   shift; cmd_stop "$1";;
   resolve)                shift; cmd_resolve "$1" "$2";;
+  mkmerge)                shift; cmd_mkmerge "$1" "$2";;
   rebuild)                shift; gl_trigger reconcile "$1";;
   status)  cmd_status;;
   demo)    cmd_demo;;
   test)    cmd_test;;
-  *) echo "usage: ctl.sh {create-train|promote-test|promote-release|stop|resolve|rebuild|status|demo|test}"; exit 1;;
+  *) echo "usage: ctl.sh {create-train|promote-test|promote-release|stop|resolve|mkmerge|rebuild|status|demo|test}"; exit 1;;
 esac

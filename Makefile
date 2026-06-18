@@ -73,8 +73,11 @@ release: ## промоушн предпрод(:8083)+прод(:8084) + merge mas
 stop: ## stop-the-line (дефект на тесте): make stop DATE=26.06.09
 	@$(RUNCTL) stop $(DATE)
 
-resolve: ## демо-резолв merge-ветки: make resolve REPO=svc-a MB=merge/bt-77-bt-78
+resolve: ## демо-резолв существующей skeleton-ветки: make resolve REPO=svc-a MB=merge/bt-77-bt-78
 	@$(RUNCTL) resolve $(REPO) $(MB)
+
+mkmerge: ## создать+резолв merge-ветку с нуля (в т.ч. тройную): make mkmerge REPO=svc-a BTS=77,78,79
+	@$(RUNCTL) mkmerge $(REPO) $(BTS)
 
 rebuild: ## пересобрать dev поезда (после resolve): make rebuild DATE=26.06.16
 	@$(RUNCTL) rebuild $(DATE)
@@ -113,4 +116,4 @@ reset: guard-docker ## полный сброс (тома, state, стенд-об
 	@echo "reset: всё снесено, поднимаю заново..."
 	@$(MAKE) --no-print-directory up
 
-.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status dev test release stop resolve rebuild inject-defect logs clock-init next-train tick down reset
+.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status dev test release stop resolve mkmerge rebuild inject-defect logs clock-init next-train tick down reset

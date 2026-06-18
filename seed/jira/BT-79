@@ -1,0 +1,10 @@
+{
+  "key": "BT-79",
+  "fields": {
+    "summary": "Смена владельца shared-конфига (C)",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Третий участник конфликта shared.json (тройной кейс: 77/78/79)."
+  }
+}
