@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Частые релизы — релизные поезда</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#161b22; --line:#30363d; --fg:#e6edf3; --mut:#8b949e;
+    --acc:#58a6ff; --acc2:#7ee787; --warn:#d29922; --bad:#f85149; --vio:#bc8cff;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5}
+  .deck{scroll-snap-type:y mandatory;overflow-y:scroll;height:100vh}
+  section{min-height:100vh;scroll-snap-align:start;padding:64px 7vw 96px;
+    border-bottom:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;position:relative}
+  h1{font-size:clamp(32px,5vw,64px);line-height:1.05;margin:0 0 12px}
+  h2{font-size:clamp(24px,3.4vw,40px);margin:0 0 20px;letter-spacing:-.5px}
+  h2 .n{color:var(--acc);font-variant-numeric:tabular-nums;margin-right:14px;opacity:.7}
+  h3{font-size:20px;margin:18px 0 8px;color:var(--acc)}
+  p,li{font-size:clamp(15px,1.5vw,19px);color:#cdd6e0}
+  .lead{font-size:clamp(18px,2vw,26px);color:var(--mut);max-width:60ch}
+  .acc{color:var(--acc)} .acc2{color:var(--acc2)} .vio{color:var(--vio)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .mut{color:var(--mut)}
+  .grid{display:grid;gap:16px;margin-top:8px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:880px){.g2,.g3{grid-template-columns:1fr}}
+  .card{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card h3{margin-top:0}
+  .badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+    padding:4px 10px;border-radius:999px;background:#1f6feb22;color:var(--acc);border:1px solid #1f6feb55}
+  .kicker{color:var(--acc2);font-weight:700;letter-spacing:2px;text-transform:uppercase;font-size:13px;margin-bottom:14px}
+  pre{background:#0a0e14 !important;border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow:auto;margin:10px 0}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+  p code,li code,td code{background:#1f2630;padding:1px 6px;border-radius:6px;font-size:.92em;color:#c9d1d9}
+  .mermaid{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:20px;margin:12px 0;text-align:center}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:15px}
+  th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  th{background:#1b2230;color:var(--acc)}
+  tr:nth-child(even) td{background:#11161e}
+  .steps{counter-reset:s;display:grid;gap:12px;margin-top:8px}
+  .steps .st{display:flex;gap:14px;align-items:flex-start;background:var(--bg2);border:1px solid var(--line);
+    border-radius:12px;padding:14px 16px}
+  .steps .st::before{counter-increment:s;content:counter(s);flex:0 0 34px;height:34px;border-radius:9px;
+    background:linear-gradient(135deg,#1f6feb,#7ee787);color:#08121f;font-weight:800;display:grid;place-items:center}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:8px;padding:2px 9px;margin:2px;font-size:13px;background:#11161e}
+  .ok{color:var(--acc2)} .no{color:var(--bad)}
+  .foot{position:absolute;bottom:22px;left:7vw;right:7vw;display:flex;justify-content:space-between;color:#586069;font-size:13px}
+  .dots{position:fixed;right:18px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:9px;z-index:20}
+  .dots a{width:10px;height:10px;border-radius:50%;background:#30363d;display:block;transition:.2s}
+  .dots a:hover,.dots a.on{background:var(--acc);transform:scale(1.3)}
+  .bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#1f6feb,#7ee787);z-index:30;width:0}
+  .big{font-size:clamp(40px,8vw,110px);font-weight:800;line-height:1;
+    background:linear-gradient(135deg,#58a6ff,#7ee787 60%,#bc8cff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hint{color:#586069;font-size:14px;margin-top:26px}
+  ul{margin:8px 0}
+  .tag-dev{color:var(--acc)} .tag-test{color:var(--warn)} .tag-rel{color:var(--vio)} .tag-prod{color:var(--acc2)}
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+  .flow .b{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-weight:600}
+  .flow .ar{color:var(--mut);font-size:22px}
+</style>
+</head>
+<body>
+<div class="bar" id="bar"></div>
+<nav class="dots" id="dots"></nav>
+<div class="deck" id="deck">
+
+<!-- 1 -->
+<section>
+  <div class="kicker">Инженерный подход</div>
+  <h1>Частые релизы<br><span class="acc">релизные поезда</span></h1>
+  <p class="lead">От больших релизов раз в месяц — к маленьким поставкам 2 раза в неделю и далее ежедневно. Всё через git и CI, с автоматической сборкой, конфликтами под контролем и чистыми ветками.</p>
+  <p class="hint">Листать: стрелки / пробел / колесо. Схемы — mermaid, примеры — из рабочего демо-полигона.</p>
+  <div class="foot"><span>Релизные поезда</span><span>01</span></div>
+</section>
+
+<!-- 2 -->
+<section>
+  <h2><span class="n">01</span>Зачем это всё</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Было: большой релиз раз в месяц</h3>
+      <ul>
+        <li>Копятся изменения -> сложное тестирование</li>
+        <li>Высокий риск каждого релиза</li>
+        <li>Обратная связь — недели</li>
+        <li>Тяжело найти причину дефекта</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Стало: маленькие частые поставки</h3>
+      <ul>
+        <li>Малый батч — меньше риск на изменение</li>
+        <li>Обратная связь — дни</li>
+        <li>Дефект ищется быстро (мало изменений)</li>
+        <li>Предсказуемость и прозрачность</li>
+      </ul>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:18px">Единица поставки — <span class="acc">бизнес-требование (БТ)</span>. Релизы собираются в <span class="acc2">поезда по расписанию</span>.</p>
+  <div class="foot"><span>Зачем</span><span>02</span></div>
+</section>
+
+<!-- 3 -->
+<section>
+  <h2><span class="n">02</span>Словарь</h2>
+  <div class="grid g3">
+    <div class="card"><h3>БТ</h3><p>Бизнес-требование. Описание — в Jira. Реализация — в ветке <code>feature/bt-&lt;N&gt;</code>.</p></div>
+    <div class="card"><h3>Релиз-поезд</h3><p>Набор БТ на дату. Имя по дате <code>26.06.09</code> (ГГ.ММ.ДД — сортируется по времени).</p></div>
+    <div class="card"><h3>Стенд</h3><p>Окружение: <span class="tag-dev">dev</span>, <span class="tag-test">test</span>, <span class="tag-rel">prepod</span>, <span class="tag-prod">prod</span>. На стенд едет ветка.</p></div>
+    <div class="card"><h3>Стенд-ветки</h3><p><code>dev-DATE</code>, <code>test-DATE</code>, <code>release-DATE</code> — собираются CI, руками не трогаются.</p></div>
+    <div class="card"><h3>Merge-ветка</h3><p><code>merge/bt-X-bt-Y</code> — карантин для разрешения конфликта между БТ. Об этом — вторая половина.</p></div>
+    <div class="card"><h3>Релиз-репо</h3><p>Источник правды: состав поездов (<code>bt-set.yaml</code>) и привязка стендов (<code>stands/</code>).</p></div>
+  </div>
+  <div class="foot"><span>Словарь</span><span>03</span></div>
+</section>
+
+<!-- 4 -->
+<section>
+  <h2><span class="n">03</span>Карта системы</h2>
+  <pre class="mermaid">
+flowchart LR
+  subgraph SRC[Сервисы в GitLab]
+    A[svc-a]:::s
+    B[svc-b]:::s
+    F[frontend]:::s
+  end
+  J[(Jira<br/>описания БТ)]:::ext
+  R[[release-repo<br/>bt-set.yaml + stands/]]:::rel
+  CI{{GitLab CI<br/>reconcile / promote}}:::ci
+  subgraph ST[Стенды]
+    D[dev]:::dev
+    T[test]:::test
+    P[prepod]:::rel2
+    PR[prod]:::prod
+  end
+  J -. описания .-> R
+  R -- состав поезда --> CI
+  SRC -- feature/bt-N --> CI
+  CI -- собирает ветки --> SRC
+  CI -- деплой --> D & T & P & PR
+  classDef s fill:#161b22,stroke:#1f6feb,color:#e6edf3
+  classDef ext fill:#161b22,stroke:#bc8cff,color:#e6edf3
+  classDef rel fill:#161b22,stroke:#7ee787,color:#e6edf3
+  classDef rel2 fill:#161b22,stroke:#bc8cff,color:#e6edf3
+  classDef ci fill:#1b2230,stroke:#d29922,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  classDef test fill:#241f10,stroke:#d29922,color:#e6edf3
+  classDef prod fill:#10241a,stroke:#2ea043,color:#e6edf3
+  </pre>
+  <p class="mut">Наша автоматизация — git-оркестрация веток. Как именно деплоит инфра (в полигоне — простая CI-симуляция через nginx-образы) — отдельный слой.</p>
+  <div class="foot"><span>Карта</span><span>04</span></div>
+</section>
+
+<!-- 5 -->
+<section>
+  <h2><span class="n">04</span>Путь одного БТ — сверху</h2>
+  <div class="flow">
+    <span class="b">Jira: БТ-16</span><span class="ar">-&gt;</span>
+    <span class="b">feature/bt-16</span><span class="ar">-&gt;</span>
+    <span class="b">bt-set.yaml</span><span class="ar">-&gt;</span>
+    <span class="b tag-dev">dev</span><span class="ar">-&gt;</span>
+    <span class="b tag-test">test</span><span class="ar">-&gt;</span>
+    <span class="b tag-rel">prepod</span><span class="ar">-&gt;</span>
+    <span class="b tag-prod">prod</span>
+  </div>
+  <pre class="mermaid">
+sequenceDiagram
+  participant Dev as Разработчик
+  participant Svc as Сервис (git)
+  participant Rel as release-repo
+  participant CI as GitLab CI
+  participant St as Стенды
+  Dev->>Svc: feature/bt-16 (код БТ)
+  Dev->>Rel: bt-set.yaml += BT-16
+  Rel->>CI: push -> reconcile
+  CI->>Svc: dev-DATE = master + merge feature/bt-16
+  CI->>St: deploy dev
+  Dev->>Rel: stands/test = DATE
+  Rel->>CI: push -> promote
+  CI->>St: deploy test -> (release) prepod + prod
+  </pre>
+  <div class="foot"><span>Путь БТ</span><span>05</span></div>
+</section>
+
+<!-- 6 -->
+<section>
+  <h2><span class="n">05</span>Что где править</h2>
+  <table>
+    <tr><th>Что</th><th>Где</th><th>Кто</th></tr>
+    <tr><td>Описание БТ</td><td>Jira</td><td>аналитик / PO</td></tr>
+    <tr><td>Реализация БТ</td><td><code>feature/bt-&lt;N&gt;</code> в сервисе</td><td>разработчик</td></tr>
+    <tr><td>Состав поезда</td><td><code>trains/DATE/bt-set.yaml</code> (релиз-репо)</td><td>разраб / PO (MR)</td></tr>
+    <tr><td>Промоушн на стенд</td><td><code>stands/&lt;env&gt;</code> (релиз-репо)</td><td>релиз-инженер</td></tr>
+    <tr><td>Резолв конфликта</td><td><code>merge/bt-X-bt-Y</code> в сервисе</td><td>разработчик</td></tr>
+    <tr><td class="no">Никогда руками</td><td><code>dev-/test-/release-/master</code></td><td>только CI</td></tr>
+  </table>
+  <p class="hint">Правило: интеграционные и стенд-ветки рождает CI. Человек правит только источники: БТ, состав, привязку, резолв.</p>
+  <div class="foot"><span>Где править</span><span>06</span></div>
+</section>
+
+<!-- 7 -->
+<section>
+  <h2><span class="n">06</span>Релиз-репо = источник правды</h2>
+  <div class="grid g2">
+    <div>
+      <h3>Состав поезда — декларативно</h3>
+      <pre><code class="language-yaml"># trains/26.06.09/bt-set.yaml
+train: "26.06.09"
+status: open          # open | departed | shipped | stopped
+bts:
+  - id: 16
+    migration: none
+  - id: 25
+    migration: none</code></pre>
+      <p class="mut">Меняешь файл -> CI пересобирает <code>dev-DATE</code>. Выдернуть БТ = убрать строку.</p>
+    </div>
+    <div>
+      <h3>reconcile: сборка с нуля</h3>
+      <pre class="mermaid">
+flowchart TD
+  C[bt-set / stands / feature изменён] --> S[scan: feature/bt-N по каталогу]
+  S --> M[&lt;env&gt;-DATE = master + merge всех БТ + merge-ветки]
+  M --> OK{чисто?}
+  OK -- да --> DEP[deploy привязанные стенды]
+  OK -- нет --> CF[конфликт -> стратегия мержа]
+  classDef d fill:#161b22,stroke:#30363d,color:#e6edf3
+  </pre>
+    </div>
+  </div>
+  <p class="mut">Идемпотентно: тот же <code>bt-set</code> -> то же дерево. Деплой — только привязанных стендов (<code>stands/&lt;env&gt;</code>).</p>
+  <div class="foot"><span>Источник правды</span><span>07</span></div>
+</section>
+
+<!-- 8 -->
+<section>
+  <h2><span class="n">07</span>Стенды — единая политика деплоя</h2>
+  <div class="grid g2">
+    <div>
+      <h3>Привязка стенд -&gt; поезд</h3>
+      <pre><code class="language-bash"># stands/dev
+26.06.09
+# stands/test
+26.06.09
+# stands/prepod  (пусто = ничего)
+
+# stands/prod
+26.06.09</code></pre>
+      <p class="mut">Деплоится <b>только</b> то, на что указывает <code>stands/&lt;env&gt;</code>. dev не особенный. Откат = <code>git revert</code> коммита.</p>
+    </div>
+    <div>
+      <h3>Команда = стенд</h3>
+      <div class="steps">
+        <div class="st"><div><code>make dev DATE= BTS=</code><br><span class="mut">bt-set + привязать dev -> собрать dev (:8081)</span></div></div>
+        <div class="st"><div><code>make test DATE=</code><br><span class="mut">привязать test -> собрать test (:8082) НАПРЯМУЮ</span></div></div>
+        <div class="st"><div><code>make release DATE=</code><br><span class="mut">prepod (:8083) + prod (:8084) + merge master + tag</span></div></div>
+      </div>
+      <p class="mut">Каждый env собирается из <code>master + БТ + merge-ветки</code> сам. Можно починить test, минуя dev.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Стенды</span><span>08</span></div>
+</section>
+
+<!-- 9 -->
+<section>
+  <h2><span class="n">08</span>Жизненный цикл — сборка на каждый стенд</h2>
+  <pre class="mermaid">
+flowchart LR
+  M((master)):::m --> ASM{{reconcile<br/>assemble}}:::ci
+  F1[feature/bt-16]:::f --> ASM
+  F2[feature/bt-25]:::f --> ASM
+  MB[merge/bt-*<br/>резолвы]:::mb --> ASM
+  ASM -->|stands/dev| DV[dev-DATE]:::dev
+  ASM -->|stands/test| TS[test-DATE]:::test
+  ASM -->|stands/prepod| PP[prepod-DATE]:::rel
+  ASM -->|stands/prod| PR[prod-DATE]:::prod
+  PR -->|merge + tag shipped-DATE| M
+  classDef m fill:#10241a,stroke:#2ea043,color:#e6edf3
+  classDef f fill:#161b22,stroke:#8b949e,color:#e6edf3
+  classDef mb fill:#1a1426,stroke:#bc8cff,color:#e6edf3
+  classDef ci fill:#1b2230,stroke:#d29922,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  classDef test fill:#241f10,stroke:#d29922,color:#e6edf3
+  classDef rel fill:#1a1426,stroke:#bc8cff,color:#e6edf3
+  classDef prod fill:#10241a,stroke:#2ea043,color:#e6edf3
+  </pre>
+  <p class="mut">Каждый <code>&lt;env&gt;-DATE</code> собирается из одних источников (master + БТ + merge-ветки) НЕЗАВИСИМО -> любой стенд можно собрать напрямую. SLA: test &lt;=2ч, предпрод &lt;=1.5ч, прод &lt;=30мин. test-what-you-ship = дисциплина (не менять ветки между test и prod).</p>
+  <div class="foot"><span>Цикл</span><span>09</span></div>
+</section>
+
+<!-- 10 -->
+<section>
+  <h2><span class="n">09</span>Сломалось — стоп-кран</h2>
+  <pre class="mermaid">
+flowchart TD
+  G{gate на тесте} -->|pass| R[release -> prod]:::ok
+  G -->|fail| S[status: stopped]:::bad
+  S --> PM[postmortem.md]:::bad
+  S --> CO[дефектный БТ -> следующий поезд]:::w
+  CO --> NX[новый поезд: fix + бездефектные БТ]:::dev
+  classDef ok fill:#10241a,stroke:#2ea043,color:#e6edf3
+  classDef bad fill:#2a1414,stroke:#f85149,color:#e6edf3
+  classDef w fill:#241f10,stroke:#d29922,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  </pre>
+  <p class="mut">Испорченный поезд не реанимируют. Разбор полётов: почему синхронное тестирование не отсекло дефект. БТ едет следующим поездом.</p>
+  <div class="foot"><span>Stop-the-line</span><span>10</span></div>
+</section>
+
+<!-- 11 divider -->
+<section style="text-align:center;align-items:center">
+  <div class="kicker">Часть вторая</div>
+  <div class="big">Конфликты</div>
+  <p class="lead" style="margin:18px auto 0">Когда два БТ трогают один код. Главная цель: <span class="acc2">feature-ветки остаются чистыми</span> — ни одного коммита друг друга.</p>
+  <div class="foot"><span>Конфликты</span><span>11</span></div>
+</section>
+
+<!-- 12 -->
+<section>
+  <h2><span class="n">10</span>Порядок мержа — отложенный merge</h2>
+  <p class="lead">Ветка не вмержилась -&gt; не валим поезд. Откладываем, мержим остальные, возвращаемся к ней позже. Крутим, пока есть прогресс.</p>
+  <pre class="mermaid">
+flowchart TD
+  ST[units: merge-ветки + все feature] --> P{проход по pending}
+  P --> TRY[merge ветку]
+  TRY -->|ок| KEEP[оставить в dev, progress=1]
+  TRY -->|конфликт| AB[git merge --abort -> отложить]
+  KEEP --> NEXT[следующая]
+  AB --> NEXT
+  NEXT --> MORE{остались pending?}
+  MORE -->|да| P
+  MORE -->|нет| DONE[готово]
+  P -->|проход без прогресса| REAL[настоящий конфликт -> резолв]
+  classDef d fill:#161b22,stroke:#30363d,color:#e6edf3
+  </pre>
+  <p class="mut">«Отложение после отложенного»: отложенная ветка на следующем проходе может вмержиться (её пара уже в dev) — или окончательно уйти в резолв.</p>
+  <div class="foot"><span>Отложенный merge</span><span>12</span></div>
+</section>
+
+<!-- 13 -->
+<section>
+  <h2><span class="n">11</span>Карантин резолва — merge-ветка</h2>
+  <div class="grid g2">
+    <div>
+      <h3>Идея</h3>
+      <ul>
+        <li>Нашли конфликтную <span class="acc">пару</span> (попарная проба <code>master + A + B</code>).</li>
+        <li>Создаём <code>merge/bt-A-bt-B</code> = master + обе ветки.</li>
+        <li>Конфликт разрешаем <span class="acc2">ТАМ</span>, один раз, в карантине.</li>
+        <li><code>feature/bt-A</code> и <code>feature/bt-B</code> — <span class="acc2">не трогаются</span>.</li>
+      </ul>
+      <p class="mut">Почему чисто: в каждой ветке могут быть 5 коммитов, конфликт — только в первых. Merge-ветка фиксирует резолв; новые коммиты едут обычным мержем feature-веток.</p>
+    </div>
+    <div>
+      <pre class="mermaid">
+flowchart TD
+  M((master)):::m --> A[feature/bt-77<br/>чистая]:::f
+  M --> B[feature/bt-78<br/>чистая]:::f
+  A --> MB[merge/bt-77-bt-78<br/>резолв конфликта]:::mb
+  B --> MB
+  MB -. в сборку .-> DV[dev-DATE]:::dev
+  A -. в сборку .-> DV
+  B -. в сборку .-> DV
+  classDef m fill:#10241a,stroke:#2ea043,color:#e6edf3
+  classDef f fill:#161b22,stroke:#7ee787,color:#e6edf3
+  classDef mb fill:#1a1426,stroke:#bc8cff,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  </pre>
+    </div>
+  </div>
+  <div class="foot"><span>Карантин</span><span>13</span></div>
+</section>
+
+<!-- 14 -->
+<section>
+  <h2><span class="n">12</span>Кто что делает при конфликте</h2>
+  <div class="steps">
+    <div class="st"><div><b>CI (reconcile)</b> ловит конфликт, находит пару, создаёт <code>merge/bt-X-bt-Y</code> (skeleton с маркерами), пушит, падает красным.</div></div>
+    <div class="st"><div><b>Разработчик</b> чекаутит merge-ветку, разрешает маркеры, пушит. feature-ветки не трогает.</div></div>
+    <div class="st"><div><b>CI (rebuild)</b> на повторе видит разрешённую merge-ветку, мержит её первой -> резолв становится предком -> feature-ветки добавляются чисто.</div></div>
+  </div>
+  <pre><code class="language-bash"># демо: разрешить и пересобрать
+make resolve REPO=svc-a MB=merge/bt-77-bt-78   # (в жизни — руками разраб)
+make rebuild DATE=26.06.16                       # повторный reconcile</code></pre>
+  <p class="mut">Используется только разрешённая merge-ветка (без маркеров <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>).</p>
+  <div class="foot"><span>Роли при конфликте</span><span>14</span></div>
+</section>
+
+<!-- 15 -->
+<section>
+  <h2><span class="n">13</span>Сборка dev — порядок и состав</h2>
+  <div class="grid g2">
+    <div>
+      <h3>Юниты сборки</h3>
+      <p><span class="pill">все merge-ветки</span> с БТ ⊆ поезда <b>(первыми)</b></p>
+      <p><span class="pill">+ все feature/bt-N</span> поезда <b>(потом)</b></p>
+      <ul>
+        <li>Merge-ветка несёт резолв -> становится предком.</li>
+        <li>feature-ветки добавляют новые неконфликтные коммиты без повторного конфликта.</li>
+        <li>Merge-ветка — точечный снимок резолва, устаревает by design.</li>
+      </ul>
+    </div>
+    <div>
+      <pre class="mermaid">
+flowchart TD
+  M((master)):::m --> DV[dev-DATE]:::dev
+  MB1[merge/bt-77-bt-78]:::mb -->|1. первыми| DV
+  F1[feature/bt-77]:::f -->|2. потом| DV
+  F2[feature/bt-78]:::f -->|2. потом| DV
+  F3[feature/bt-16]:::f -->|2. потом| DV
+  classDef m fill:#10241a,stroke:#2ea043,color:#e6edf3
+  classDef mb fill:#1a1426,stroke:#bc8cff,color:#e6edf3
+  classDef f fill:#161b22,stroke:#7ee787,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  </pre>
+    </div>
+  </div>
+  <div class="foot"><span>Сборка</span><span>15</span></div>
+</section>
+
+<!-- 16 -->
+<section>
+  <h2><span class="n">14</span>Разные конфликты — все merge-ветки нужны</h2>
+  <p class="lead">Включаем <span class="acc2">все</span> merge-ветки поезда. Разные ветки решают разные конфликты — на разных файлах композятся.</p>
+  <pre class="mermaid">
+flowchart LR
+  subgraph IN[Поезд 77,78,81,82]
+    MB1[merge/bt-77-bt-78<br/>резолв shared.json]:::mb
+    MB2[merge/bt-81-bt-82<br/>резолв flags.json]:::mb2
+  end
+  MB1 --> DV[dev-DATE]:::dev
+  MB2 --> DV
+  DV --> OUT[shared.json: bt-77+bt-78<br/>flags.json: bt-81+bt-82]:::ok
+  classDef mb fill:#1a1426,stroke:#bc8cff,color:#e6edf3
+  classDef mb2 fill:#241f10,stroke:#d29922,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  classDef ok fill:#10241a,stroke:#2ea043,color:#e6edf3
+  </pre>
+  <p class="mut">Дисциплина: один конфликт-кластер = одна merge-ветка. Две ветки на один и тот же ханк по-разному -> конфликт между ними (корректно, противоречие всплывает).</p>
+  <div class="foot"><span>Дизъюнктные</span><span>16</span></div>
+</section>
+
+<!-- 17 -->
+<section>
+  <h2><span class="n">15</span>Тройные и кластеры</h2>
+  <p>reconcile авто-создаёт только <b>парные</b> skeleton. Кластер 3+ собирает разработчик — одной веткой со всеми БТ в имени:</p>
+  <pre><code class="language-bash">make mkmerge REPO=svc-a BTS=77,78,79   # -> merge/bt-77-bt-78-bt-79</code></pre>
+  <p>Подключается в релиз <span class="acc2">автоматически по имени</span>: сборщик ищет любую <code>merge/*</code>, чьи БТ ⊆ поезда. Никакой доп. проводки.</p>
+  <pre class="mermaid">
+flowchart LR
+  T[поезд 77,78,79] --> SC[scan merge/*]
+  SC --> MB[merge/bt-77-bt-78-bt-79<br/>БТ все в поезде]:::mb
+  MB --> DV[dev-DATE<br/>owner = bt-77+bt-78+bt-79]:::dev
+  classDef mb fill:#1a1426,stroke:#bc8cff,color:#e6edf3
+  classDef dev fill:#11202f,stroke:#58a6ff,color:#e6edf3
+  </pre>
+  <p class="mut">Эскалация пары в тройку: пересоздать тройную и удалить парную (один ханк — одна ветка).</p>
+  <div class="foot"><span>Кластеры</span><span>17</span></div>
+</section>
+
+<!-- 18 -->
+<section>
+  <h2><span class="n">16</span>Код из демо — отложенный merge</h2>
+  <pre><code class="language-bash"># reconcile.sh — итеративный отложенный merge
+while :; do
+  progress=0; still=()
+  for u in "${pending[@]}"; do
+    if git -C "$rdir" merge --no-edit --no-ff "origin/$u" >/dev/null 2>&1; then
+      progress=1
+      [[ "$u" == feature/bt-* ]] && merged_feats+=" ${u#feature/bt-}"
+    else
+      git -C "$rdir" merge --abort   # конфликт -> отложить
+      still+=("$u")
+    fi
+  done
+  pending=("${still[@]}")
+  [ "$progress" = 1 ] || break       # проход без прогресса -> настоящий конфликт
+done</code></pre>
+  <div class="foot"><span>Код: merge</span><span>18</span></div>
+</section>
+
+<!-- 19 -->
+<section>
+  <h2><span class="n">17</span>Код из демо — дискавери merge-веток</h2>
+  <pre><code class="language-bash"># reconcile.sh — берём все merge/* с БТ из поезда (>=2), + все feature
+while read -r ref; do
+  short="${ref#origin/}"
+  bts="$(parse_bts "$short")"                 # bt-77-bt-78 -> 77 78
+  [ "$(echo $bts|wc -w)" -ge 2 ] || continue
+  okm=1; for b in $bts; do in_set "$b" "$ids" || okm=0; done
+  [ "$okm" = 1 ] && merge_units+=("$short")    # БТ ветки все в поезде
+done < <(git -C "$rdir" for-each-ref 'refs/remotes/origin/merge/*')
+
+units=( "${merge_units[@]}" "${feat_units[@]}" )   # merge-ветки ПЕРВЫМИ</code></pre>
+  <div class="foot"><span>Код: дискавери</span><span>19</span></div>
+</section>
+
+<!-- 20 -->
+<section>
+  <h2><span class="n">18</span>Демо проходит зелёным</h2>
+  <pre><code class="language-bash">### 8. Конфликт bt-77/bt-78 -> skeleton -> resolve -> зелено, bt-ветки чистые
+  [OK] reconcile упал, нужен резолв
+  [OK] создана merge/bt-77-bt-78 (skeleton)
+  [OK] dev shared.json разрешён (owner=bt-77+bt-78)
+  [OK] feature/bt-77,78 чистые (bt-77/bt-78)
+### 9. Дизъюнктные конфликты: 77/78 (shared.json) + 81/82 (flags.json)
+  [OK] ОБЕ merge-ветки включены и скомпозились (shared=bt-77+bt-78, flags=bt-81+bt-82)
+DEMO: ВСЕ ПРОВЕРКИ ЗЕЛЁНЫЕ
+TEST: OK</code></pre>
+  <p class="mut">Запуск с нуля: <code>make reset &amp;&amp; make demo &amp;&amp; make check</code>.</p>
+  <div class="foot"><span>Зелено</span><span>20</span></div>
+</section>
+
+<!-- 21 -->
+<section style="text-align:center;align-items:center">
+  <div class="kicker">Итог</div>
+  <h2 style="border:0">Чистые ветки, частые релизы, конфликты под контролем</h2>
+  <div class="grid g3" style="max-width:1000px;width:100%;margin-top:10px">
+    <div class="card"><h3 class="acc2">Декларативно</h3><p>bt-set + stands/ в git. CI приводит к состоянию.</p></div>
+    <div class="card"><h3 class="acc2">Чистые feature</h3><p>Резолв — в карантине merge-веток, не в БТ.</p></div>
+    <div class="card"><h3 class="acc2">Воспроизводимо</h3><p>reset -&gt; apply -&gt; работает. Зелёный демо.</p></div>
+  </div>
+  <p class="hint">Полигон: GitLab + runner + mock-jira + стенды на docker-compose. Один <code>make up</code>.</p>
+  <div class="foot"><span>Спасибо</span><span>21</span></div>
+</section>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad:true, theme:'dark', securityLevel:'loose',
+    flowchart:{curve:'basis', useMaxWidth:true},
+    themeVariables:{ fontSize:'15px', primaryColor:'#161b22', primaryTextColor:'#e6edf3',
+      lineColor:'#586069', primaryBorderColor:'#30363d' }
+  });
+  document.addEventListener('DOMContentLoaded',()=>{ if(window.hljs) hljs.highlightAll(); });
+
+  // прогресс + точки навигации
+  const deck=document.getElementById('deck'), secs=[...deck.querySelectorAll('section')];
+  const dots=document.getElementById('dots');
+  secs.forEach((s,i)=>{const a=document.createElement('a');a.href='#';a.title='Слайд '+(i+1);
+    a.onclick=e=>{e.preventDefault();s.scrollIntoView({behavior:'smooth'})};dots.appendChild(a)});
+  const dotsEls=[...dots.children], bar=document.getElementById('bar');
+  function upd(){const top=deck.scrollTop, h=deck.scrollHeight-deck.clientHeight;
+    bar.style.width=(100*top/h)+'%';
+    let cur=0; secs.forEach((s,i)=>{ if(s.offsetTop-deck.clientHeight*0.4<=top) cur=i; });
+    dotsEls.forEach((d,i)=>d.classList.toggle('on',i===cur));
+  }
+  deck.addEventListener('scroll',upd); upd();
+  // клавиши
+  let idx=0;
+  function go(d){idx=Math.max(0,Math.min(secs.length-1,idx+d));secs[idx].scrollIntoView({behavior:'smooth'})}
+  function sync(){const top=deck.scrollTop;secs.forEach((s,i)=>{if(s.offsetTop-deck.clientHeight*0.4<=top)idx=i})}
+  deck.addEventListener('scroll',sync);
+  addEventListener('keydown',e=>{
+    if(['ArrowDown','ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();go(1)}
+    if(['ArrowUp','ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(-1)}
+  });
+</script>
+</body>
+</html>
