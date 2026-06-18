@@ -1,0 +1,10 @@
+{
+  "key": "BT-42",
+  "fields": {
+    "summary": "Тёмная тема интерфейса",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-a" } ],
+    "description": "Демо-БТ: добавляет dark-mode. Backend-флаг в svc-a."
+  }
+}

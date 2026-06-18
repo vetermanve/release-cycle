@@ -1,0 +1,10 @@
+{
+  "key": "BT-43",
+  "fields": {
+    "summary": "Уведомления по почте",
+    "status": { "name": "Готово к релизу" },
+    "issuetype": { "name": "Бизнес-требование" },
+    "components": [ { "name": "svc-b" } ],
+    "description": "Демо-БТ: email-уведомления в svc-b."
+  }
+}
