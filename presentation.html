@@ -253,9 +253,10 @@ stands/prod     ->  26.06.09</code></pre>
       <div class="steps">
         <div class="st"><div><code>make dev DATE= BTS=</code><br><span class="mut">bt-set + привязать dev -> собрать dev (:8081)</span></div></div>
         <div class="st"><div><code>make test DATE=</code><br><span class="mut">привязать test -> собрать test (:8082) НАПРЯМУЮ</span></div></div>
-        <div class="st"><div><code>make release DATE=</code><br><span class="mut">prepod (:8083) + prod (:8084) + merge master + tag</span></div></div>
+        <div class="st"><div><code>make release DATE=</code><br><span class="mut">prepod (:8083) + prod (:8084); master НЕ трогаем</span></div></div>
+        <div class="st"><div><code>make accept DATE=</code><br><span class="mut">прод принят -> merge prod->master + tag -> рефреш dev/test</span></div></div>
       </div>
-      <p class="mut">Каждый env собирается из <code>master + БТ + merge-ветки</code> сам. Можно починить test, минуя dev.</p>
+      <p class="mut">Авто-рефреш (пуш в feature / смена bt-set) -> только активные dev/test. prepod/prod — только явным промоушном. Любой стенд собирается напрямую, минуя dev.</p>
     </div>
   </div>
   <div class="foot"><span>Стенды</span><span>08</span></div>
@@ -274,7 +275,8 @@ flowchart LR
   ASM -->|stands/test| TS[test-DATE]:::test
   ASM -->|stands/prepod| PP[prepod-DATE]:::rel
   ASM -->|stands/prod| PR[prod-DATE]:::prod
-  PR -->|merge + tag shipped-DATE| M
+  PR -->|make accept: merge + tag shipped-DATE| M
+  M -.->|подмержен в активные| ASM
   classDef m fill:#10241a,stroke:#2ea043,color:#e6edf3
   classDef f fill:#161b22,stroke:#8b949e,color:#e6edf3
   classDef mb fill:#1a1426,stroke:#bc8cff,color:#e6edf3
@@ -284,7 +286,7 @@ flowchart LR
   classDef rel fill:#1a1426,stroke:#bc8cff,color:#e6edf3
   classDef prod fill:#10241a,stroke:#2ea043,color:#e6edf3
   </pre>
-  <p class="mut">Каждый <code>&lt;env&gt;-DATE</code> собирается из одних источников (master + БТ + merge-ветки) НЕЗАВИСИМО -> любой стенд можно собрать напрямую. SLA: test &lt;=2ч, предпрод &lt;=1.5ч, прод &lt;=30мин. test-what-you-ship = дисциплина (не менять ветки между test и prod).</p>
+  <p class="mut">Каждый <code>&lt;env&gt;-DATE</code> = master + БТ + merge-ветки, НЕЗАВИСИМО. <b>release</b> катит prepod+prod, master НЕ трогает. <b>accept</b> (прод принят) -> merge prod->master + tag -> master подмержен в активные dev/test. Прод меняется только явным промоушном, не от пуша в фичу. SLA: test &lt;=2ч, предпрод &lt;=1.5ч, прод &lt;=30мин.</p>
   <div class="foot"><span>Цикл</span><span>09</span></div>
 </section>
 
