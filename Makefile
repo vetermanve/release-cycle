@@ -70,8 +70,11 @@ dev: ## bt-set + привязать dev -> собрать dev-стенд: make d
 test: ## привязать test=DATE -> собрать test-стенд напрямую (минуя dev): make test DATE=26.06.09
 	@$(RUNCTL) promote-test $(DATE)
 
-release: ## привязать prepod+prod=DATE -> собрать предпрод+прод + merge master + tag
+release: ## привязать prepod+prod=DATE -> собрать предпрод+прод (БЕЗ merge master)
 	@$(RUNCTL) promote-release $(DATE)
+
+accept: ## приёмка прода: merge prod->master + tag + рефреш активных dev/test: make accept DATE=
+	@$(RUNCTL) accept $(DATE)
 
 stop: ## stop-the-line (дефект): make stop DATE=26.06.09
 	@$(RUNCTL) stop $(DATE)
@@ -127,4 +130,4 @@ reset: guard-docker ## полный сброс (тома, state, стенд-об
 	@echo "reset: всё снесено, поднимаю заново..."
 	@$(MAKE) --no-print-directory up
 
-.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status build dev test release stop resolve mkmerge rebuild inject-defect crashtest logs clock-init next-train tick down reset
+.PHONY: help guard-docker ci-image up wait-gitlab bootstrap demo check status build dev test release accept stop resolve mkmerge rebuild inject-defect crashtest logs clock-init next-train tick down reset

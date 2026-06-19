@@ -281,11 +281,13 @@ cmd_demo() {
   echo "  test: $(stands_put test $T1)"
   stand_has_bt test 16 && stand_has_bt test 25 && stand_has_bt test 30 && ok "test-стенд = состав поезда" || fail "test-стенд неверен"
 
-  echo "### 5. Стенды prepod+prod=$T1 + merge master + tag"
+  echo "### 5. Релиз prepod+prod=$T1 (без merge master), затем accept"
   echo "  release: $(stands_put prepod $T1 prod $T1)"
   stand_has_bt prod 16 && stand_has_bt prod 25 && stand_has_bt prod 30 && ok "prod-стенд = состав" || fail "prod-стенд неверен"
-  [ "$(train_status $T1)" = shipped ] && ok "поезд $T1 shipped" || fail "статус $T1 != shipped"
-  tag_exists "$SVC_A_ID" "shipped-$T1" && ok "tag shipped-$T1 в svc-a" || fail "нет тега в svc-a"
+  [ "$(train_status $T1)" != shipped ] && ok "до accept статус не shipped (master не тронут)" || fail "shipped до accept?"
+  echo "  accept: $(gl_trigger accept $T1)"
+  [ "$(train_status $T1)" = shipped ] && ok "после accept: $T1 shipped" || fail "статус $T1 != shipped"
+  tag_exists "$SVC_A_ID" "shipped-$T1" && ok "tag shipped-$T1 в svc-a (accept)" || fail "нет тега в svc-a"
 
   echo "### 6. Поезд $T2: BT-99 -> dev + test -> stop-the-line"
   cmd_dev $T2 99 >/dev/null
@@ -361,11 +363,12 @@ case "${1:-}" in
   promote-test)           shift; stands_put test "$1";;
   promote-release)        shift; stands_put prepod "$1" prod "$1";;
   stop)                   shift; cmd_stop "$1";;
+  accept)                 shift; gl_trigger accept "$1";;
   resolve)                shift; cmd_resolve "$1" "$2";;
   mkmerge)                shift; cmd_mkmerge "$1" "$2";;
   rebuild)                shift; gl_trigger reconcile "$1";;
   status)  cmd_status;;
   demo)    cmd_demo;;
   test)    cmd_test;;
-  *) echo "usage: ctl.sh {create-train|promote-test|promote-release|stop|resolve|mkmerge|rebuild|status|demo|test}"; exit 1;;
+  *) echo "usage: ctl.sh {create-train|dev|promote-test|promote-release|stop|accept|resolve|mkmerge|rebuild|status|demo|test}"; exit 1;;
 esac

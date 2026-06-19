@@ -17,6 +17,7 @@ reconcile:
   stage: run
   rules:
     - if: '$ACTION == "reconcile"'
+    - if: '$ACTION == "accept"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
       changes:
         - trains/**/bt-set.yaml

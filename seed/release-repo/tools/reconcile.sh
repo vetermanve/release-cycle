@@ -128,6 +128,32 @@ set_status() {  # date status (commit [skip ci])
     git diff --cached --quiet || { git commit -q -m "ci($1): status=$2 [skip ci]"; git push -q -o ci.skip "$(auth_url release-repo)" HEAD:master; } )
 }
 
+has_remote_branch() { git ls-remote --heads "$(auth_url "$1")" "$2" 2>/dev/null | grep -q "refs/heads/$2\$"; }
+
+# Приёмка прода: prod-<date> -> master + tag во всех затронутых репо; затем master
+# подмержен во все поезда (env пересобираются от свежего master) -> рефреш активных dev/test.
+accept_train() {  # date
+  local date="$1" any=0 name d rdir
+  [ -n "$date" ] || { log "accept: не задана дата"; return 1; }
+  while IFS=$'\t' read -r name _; do
+    [ -n "$name" ] || continue
+    has_remote_branch "$name" "prod-${date}" || continue
+    rdir="$(mktemp -d)"
+    git clone -q "$(auth_url "$name")" "$rdir"
+    git -C "$rdir" config user.email ci@polygon.local; git -C "$rdir" config user.name polygon-ci
+    git -C "$rdir" checkout -q master
+    git -C "$rdir" merge --no-edit --no-ff "origin/prod-${date}" >/dev/null 2>&1 || true
+    git -C "$rdir" tag -f "shipped-${date}" >/dev/null
+    git -C "$rdir" push -q "$(auth_url "$name")" master
+    git -C "$rdir" push -q -f "$(auth_url "$name")" "shipped-${date}"
+    any=1; log "  accept ${name}: prod-${date} -> master, tag shipped-${date}"
+  done < <(catalog_repos)
+  [ "$any" = 1 ] || { log "accept ${date}: нет prod-веток (сначала make release)"; return 1; }
+  set_status "$date" shipped
+  log "accept ${date}: master обновлён; рефреш активных dev/test от свежего master..."
+  for env in dev test; do d="$(slot_read "$env")"; [ -n "$d" ] && assemble_stand "$env" "$d"; done
+}
+
 # Собрать и задеплоить ОДИН стенд из его поезда. rc 0/1.
 assemble_stand() {  # env date
   local env="$1" date="$2"
@@ -151,14 +177,6 @@ assemble_stand() {  # env date
     case "$rc" in
       2) :;;
       0) echo "${name} ${env}-${date} ${BUILD_SHA} bts=${BUILD_BTS}" >> "$lock"
-         # prod: влить в master + тег (история/тег)
-         if [ "$env" = prod ]; then
-           git -C "$rdir" checkout -q master
-           git -C "$rdir" merge --no-edit --no-ff "origin/prod-${date}" >/dev/null 2>&1 || true
-           git -C "$rdir" tag -f "shipped-${date}" >/dev/null
-           git -C "$rdir" push -q "$(auth_url "$name")" master 2>/dev/null || true
-           git -C "$rdir" push -q -f "$(auth_url "$name")" "shipped-${date}"
-         fi
          log "    ${name}: ${env}-${date} ${BUILD_SHA} (БТ=${BUILD_BTS})";;
       *) conflict=1; CONFLICT_MSG="${CONFLICT_MSG}"; log "    CONFLICT ${CONFLICT_MSG}"; break;;
     esac
@@ -169,8 +187,8 @@ assemble_stand() {  # env date
   push_generated "${date}"
   [ "$conflict" -eq 0 ] || { log "  ${env}: ОСТАНОВЛЕН (${CONFLICT_MSG})"; return 1; }
 
+  # prod НЕ мержит master автоматически — это делает accept_train ПОСЛЕ приёмки.
   bash "${HERE}/deploy_stand.sh" "$env" "${date}"
-  [ "$env" = prod ] && set_status "$date" shipped
   log "  ${env}-стенд: поезд ${date} задеплоен"
 }
 
@@ -184,22 +202,25 @@ push_generated() {
 # Какие (env,date) рефрешить по изменению.
 main() {
   local arg="${1:-}" targets="" env d changed T
+  # приёмка прода -> merge master + рефреш активных dev/test
+  if [ "${ACTION:-}" = "accept" ]; then accept_train "$arg"; return $?; fi
+
   if [ -n "$arg" ]; then
-    # явная дата (rebuild) -> все стенды, привязанные к ней
+    # rebuild конкретного поезда -> ВСЕ его привязанные стенды (любой env)
     for env in dev test prepod prod; do [ "$(slot_read "$env")" = "$arg" ] && targets+=" ${env}:${arg}"; done
   elif [ "${CI_PIPELINE_SOURCE:-}" = "push" ]; then
     changed="$(cd "${RELREPO_DIR}" && git diff --name-only HEAD~1 HEAD 2>/dev/null)"
-    # изменён stands/<env> -> этот стенд
+    # stands/<env> изменён -> ИМЕННО этот стенд (явный промоушн; любой env, вкл. prepod/prod)
     for env in dev test prepod prod; do
       echo "$changed" | grep -qx "stands/${env}" && { d="$(slot_read "$env")"; [ -n "$d" ] && targets+=" ${env}:${d}"; }
     done
-    # изменён trains/<T>/bt-set -> стенды, привязанные к T
+    # bt-set <T> изменён (композиция) -> только активные dev/test этого поезда
     for T in $(echo "$changed" | sed -nE 's#^trains/([^/]+)/bt-set.yaml$#\1#p' | sort -u); do
-      for env in dev test prepod prod; do [ "$(slot_read "$env")" = "$T" ] && targets+=" ${env}:${T}"; done
+      for env in dev test; do [ "$(slot_read "$env")" = "$T" ] && targets+=" ${env}:${T}"; done
     done
   else
-    # триггер (feature-пуш) -> все привязанные стенды
-    for env in dev test prepod prod; do d="$(slot_read "$env")"; [ -n "$d" ] && targets+=" ${env}:${d}"; done
+    # feature-пуш (multi-project trigger, ACTION=reconcile, без даты) -> ТОЛЬКО dev/test
+    for env in dev test; do d="$(slot_read "$env")"; [ -n "$d" ] && targets+=" ${env}:${d}"; done
   fi
 
   targets="$(echo $targets | tr ' ' '\n' | sort -u | grep -v '^$' || true)"
