@@ -1,129 +1,109 @@
-# Полигон частых релизов: план обкатки
+# Полигон частых релизов: что собрано и что проверяем
 
-**Цель:** локально, на GitLab CE + GitLab CI, воспроизвести жизненный цикл релизного поезда и проверить инварианты архитектуры (`docs/01-architecture.md`) до реальной инфры. Принцип: `destroy -> apply -> работает`, fast-forward по дням без реального ожидания.
+**Цель:** локально, на GitLab CE + GitLab CI, воспроизвести жизненный цикл релизного поезда по
+`docs/01-architecture.md`. Принцип: `make reset` -> `make demo` -> `make check` зелёный с нуля.
 
-**Скоуп (важно):** наша автоматизация — **git-оркестрация веток** (намерживание feature -> стенд-ветки). Деплой в полигоне — **простая симуляция на GitLab CI** (job поднимает/обновляет compose-стек по ветке, чисто визуализация "ветка приехала на стенд"). НЕ ArgoCD/OpenShift, НЕ digest/reproducible build — это deploy-слой реальной инфры, вне зоны.
+**Скоуп:** наша автоматизация — **git-оркестрация** (сборка `<env>-DATE` из master + БТ + merge-ветки,
+binding `stands/<env>`). Деплой в полигоне — **простая симуляция**: `deploy_stand.sh` печёт nginx-образ
+со статикой ветки и поднимает контейнер `stand-<env>` на порту. НЕ ArgoCD/OpenShift, НЕ digest — это
+deploy-слой реальной инфры, вне зоны (фиксируем как риск test-what-you-ship).
 
 ---
 
-## 1. Что проверяем (инварианты)
+## 1. Инварианты (полигон зелёный, когда подтверждены)
 
-Полигон зелёный, когда подтверждены:
+1. Меняешь `bt-set` или `stands/<env>` -> reconcile пересобирает и деплоит **привязанные** стенды. (ADR-1,2,3)
+2. Деплоится только то, на что указывает `stands/<env>`; dev не особенный. (ADR-3,5)
+3. Любой стенд собирается **напрямую** (test минуя dev). (ADR-2)
+4. Auto-scan по `catalog/repos.yaml` + `ls-remote` фильтр: незатронутые репо не клонируются. (ADR-4)
+5. Multi-repo БТ (одноимённая ветка в нескольких репо) собирается во всех. 
+6. **Авто-рефреш** (push в `feature/bt-*` / смена `bt-set`) -> только активные **dev/test**; prepod/prod не трогаются. (ADR-5)
+7. `make release` катит prepod+prod, master **не трогает**; `make accept` -> merge `prod->master` + tag + рефреш dev/test. (ADR-6)
+8. Stop-the-line: `make stop` -> `status: stopped` + `postmortem.md`, БТ -> следующий поезд. (ADR-9)
+9. Конфликт -> отложенный merge -> `merge/bt-X-bt-Y` skeleton -> `resolve` -> сборка; **bt-ветки чистые**. (ADR-8)
+10. Все merge-ветки (БТ⊆поезда) включаются; дизъюнктные композятся; кластеры 3+ через `mkmerge`. (ADR-8)
+11. Каденс Вт/Чт vs daily из `schedule.yaml` + симулированные часы (`make tick`/`next-train`).
+12. `release-page.md` (doc-as-code), описания БТ из mock-Jira; миграции — по факту (`*-migrations` в каталоге).
 
-1. Меняешь `bt-set.yaml` -> reconcile-pipeline релиз-трейна пересобирает `dev-DATE` во всех затронутых репо. (ADR-1,2)
-2. Push в `feature/bt-N` -> сервисный CI триггерит pipeline релиз-трейна (multi-project trigger) -> `dev-DATE` пересобран. (раздел 4 арх.)
-3. Auto-scan находит ровно затронутые репо по `catalog/repos.yaml`, остальные пропускает. (ADR-4)
-4. Выдернуть БТ (убрать строку) -> `dev-DATE` пересобран без него, без un-merge. (ADR-2)
-5. Конфликт merge -> pipeline красный, чинится в feature-ветке, не в стенд-ветке. (ADR-7)
-6. Отправление: `status open->departed`, срез `test-DATE` без изменений, простой deploy-job показывает версию на тест-стенде.
-7. Гейт-сигнал pass -> срез `release-DATE`, deploy предпрод/прод, merge в `master` + тег. (раздел 5 арх.)
-8. Гейт-сигнал fail (defect injection) -> stop-the-line, `status: stopped`, `postmortem.md`, БТ уезжает в следующий поезд. (ADR-8)
-9. Migration-репо мержатся в стенд-ветки наравне с сервисом; фаза `migration:` попадает в release-page. (ADR-6)
-10. Каденс Вт/Чт и daily считаются из `schedule.yaml`; симулированные часы прокручивают дни.
-11. `release-page.md` генерируется doc-as-code из состава поезда.
-
-> Вне инвариантов (deploy-слой, не проверяем): test-what-you-ship, digest-verify, реальный rollback rollout.
+> Вне инвариантов (deploy-слой): реальный rollout, digest/reproducible build, строгий test-what-you-ship.
 
 ---
 
 ## 2. Стек полигона
 
-| Компонент | Реализация | Заметка |
-|-----------|------------|---------|
-| Git + CI | GitLab CE + gitlab-runner (docker executor) в compose | ~4 ГБ RAM под GitLab; единственный тяжёлый компонент |
-| Микросервисы | 3 fake-сервиса svc-a/b/c, HTTP, отдают version+BT-set | минимальный рантайм |
-| Миграции | svc-X-migrations, Liquibase changelog, отдельный репо | мержится наравне с сервисом |
-| Релиз-репо | `catalog/`, `schedule.yaml`, `trains/`, `.gitlab-ci.yml` | source of truth + pipelines поезда |
-| Deploy-симуляция | GitLab CI job -> compose стек на стенд | простая, по ветке dev-/test-/release- |
-| Стенды dev/test/prepod/prod | compose-проекты (COMPOSE_PROJECT_NAME) | визуализация версии на стенде |
-| Гейт | внешний сигнал pass/fail (ручной/scripted) -> в pipeline | тесты не гоняем сами |
-| Симулированные часы | файл/env "текущая дата", train pipeline читает | fast-forward каденса |
-| Defect injection | флаг, дающий гейту fail | проверка stop-the-line |
-| Оркестрация | Makefile: up/down/train/inject/tick/status | единая точка входа |
+| Компонент | Реализация |
+|-----------|------------|
+| Git + CI | GitLab CE + gitlab-runner (docker executor, socket-mount) в compose (`infra/gitlab/`) |
+| Job-образ | `ci-tools` (git+python+jq+docker-cli, `infra/ci-tools/`) |
+| Микросервисы | `svc-a`, `svc-b` (backend JSON), `frontend` (HTML, live-доска) |
+| Миграции | `*-migrations` репо в каталоге (по факту, как код) — поддержано, в демо-фикстурах нет |
+| Релиз-репо | `catalog/`, `schedule.yaml`, `stands/`, `trains/`, `.gitlab-ci.yml`, `tools/` |
+| mock-Jira | nginx, `seed/jira/BT-<N>` -> `/rest/api/2/issue/BT-<N>` (`:8090`) |
+| Deploy-симуляция | `deploy_stand.sh`: nginx-образ `stand-<env>:<train>` -> контейнер на порту |
+| Стенды | dev :8081, test :8082, prepod :8083, prod :8084 |
+| Гейт | внешний сигнал: `make release`/`accept` (pass) или `make stop` (fail) |
+| Часы/каденс | локальный `.state/clock` + `schedule.yaml` (`make tick`/`next-train`) |
+| Краш-тест | `make crashtest` (куча репо/веток/конфликтов, большой поезд) |
+| Оркестрация | `Makefile` + `tools/ctl.sh` (через GitLab API) |
 
 ---
 
-## 3. Структура репозитория полигона
+## 3. Структура репозитория
 
 ```
 release_cycle/
-├─ docs/                       # 01-architecture.md, 02-polygon-plan.md
-├─ infra/
-│  ├─ gitlab/                  # compose: GitLab CE + runner
-│  └─ stands/                  # compose-шаблон стенда (env, ветка)
-├─ services/
-│  ├─ svc-a/  (Dockerfile, контракт)   + svc-a-migrations/
-│  ├─ svc-b/                            + svc-b-migrations/
-│  └─ svc-c/                            + svc-c-migrations/
-├─ release-repo-seed/          # начинка релиз-репо: catalog, schedule, .gitlab-ci.yml, ci-шаблоны
-├─ ci/                         # job-шаблоны: reconcile, train, deploy-sim, doc-as-code
-├─ tools/                      # release-page генератор, next-train, reconcile-логика
+├─ docs/                       # 01-architecture, 02-polygon-plan, 03-build-task
+├─ .env(.template)             # конфиг (порты/образы/пароль/сеть)
+├─ infra/{gitlab,ci-tools,mock-jira}/
+├─ seed/                       # начинка репозиториев GitLab (засев при bootstrap)
+│  ├─ svc-a/ svc-b/ frontend/  # master-контент сервисов
+│  ├─ _features/<svc>/bt-<N>/  # фикстуры feature-веток
+│  ├─ jira/BT-<N>              # фикстуры Jira-issue
+│  └─ release-repo/            # catalog, schedule, stands/, trains/, .gitlab-ci.yml, tools/
+├─ tools/                      # bootstrap.sh, ctl.sh, crashtest.sh, cadence.py
+├─ .state/                     # рантайм (токены, id, clock) — gitignored
 └─ Makefile
 ```
 
-GitLab — source of truth в рантайме; `*-seed/` — чем засеваем при `make up` (reproducible bootstrap).
+GitLab — рантайм-носитель; `seed/` -> засев при `make up` (reproducible bootstrap).
 
 ---
 
-## 4. Фазы (каждая с критерием приёмки)
+## 4. Что реализовано (по слоям)
 
-### Фаза 0 — Bootstrap
-- compose: GitLab CE + runner. Скрипт засева: группы/проекты (svc-a/b/c + их migrations + release-repo), залить seed, зарегистрировать runner.
-- **Приёмка:** `make up` с нуля -> GitLab жив, репо созданы, runner онлайн; `make down` чистит всё.
-
-### Фаза 1 — Reconcile dev-DATE (ядро)
-- `.gitlab-ci.yml` релиз-репо: reconcile-job на изменение `trains/*/bt-set.yaml`.
-- Auto-scan по `catalog/repos.yaml`; пересборка `dev-DATE` от master + merge `feature/bt-N` по возрастанию N; force-push; запись `affected-repos.lock`; генерация `release-page.md`.
-- Multi-project trigger: сервисный CI на `feature/bt-*` дёргает pipeline релиз-трейна.
-- **Приёмка:** инварианты 1-5.
-
-### Фаза 2 — Deploy-симуляция
-- GitLab CI deploy-job: на ветке dev-/test-/release- поднимает/обновляет compose-стек стенда, контейнер отдаёт version+BT-set.
-- **Приёмка:** инвариант 6. `make status` показывает версию на каждом стенде = состав соответствующей ветки.
-
-### Фаза 3 — Отправление + промоушн по гейту
-- train pipeline: `open->departed`, срез `test-DATE`, deploy тест-стенд; ожидание гейт-сигнала; pass -> срез `release-DATE`, deploy предпрод/прод, merge `master` + тег, `status: shipped`.
-- **Приёмка:** инварианты 7, 11.
-
-### Фаза 4 — Stop-the-line
-- defect injection -> гейт fail -> `status: stopped`, `postmortem.md` стаб, БТ выпадает, перенос в следующий поезд (Вт/Чт и daily).
-- **Приёмка:** инвариант 8.
-
-### Фаза 5 — Миграции
-- svc-a-migrations: `feature/bt-N` мержится в стенд-ветки наравне с сервисом; фаза `migration:` (expand/contract) в release-page.
-- **Приёмка:** инвариант 9.
-
-### Фаза 6 — Каденс engine
-- `schedule.yaml` Вт/Чт; `next-train` из симулированных часов; прокрутка на daily.
-- **Приёмка:** инвариант 10.
+- **Bootstrap** (`make up`): GitLab+runner+mock-jira в compose; `bootstrap.sh` создаёт root (через rails),
+  проекты в группе `polygon`, заливает seed + feature-ветки, group CI-vars, регистрирует runner.
+- **Reconcile** (`seed/release-repo/tools/reconcile.sh`): единый — сборка `<env>-DATE` + деплой привязанных
+  стендов; отложенный merge + карантин конфликтов; `ls-remote` фильтр; `accept_train`.
+- **Промоушн** (`stands/<env>`): `make dev/test/release/accept/stop` -> коммит binding -> reconcile.
+- **Конфликты:** `make resolve` (skeleton), `make mkmerge` (кластеры), `make rebuild`.
+- **Deploy-симуляция** (`deploy_stand.sh` + `stand_assets.py`): nginx-образ на стенд, live-доска.
+- **doc-as-code** (`gen_release_page.py`): release-page из Jira.
+- **Каденс** (`cadence.py`): `next-train`/`tick`.
 
 ---
 
-## 5. Команды (целевой Makefile)
+## 5. Команды
 
 ```
-make up              # GitLab+runner, засеять репо
-make down            # снести всё (destroy)
-make status          # поезда + версии на стендах
-make dev DATE=... BTS=...  # собрать поезд -> dev-стенд (reconcile)
-make test DATE=...   # отправление -> тест-стенд (срез test-)
-make release DATE=...  # предпрод + прод (gate pass)
-make stop DATE=...   # stop-the-line (gate fail)
-make inject-defect SVC=svc-b BT=25    # сломать гейт
-make tick [DAYS=1]   # прокрутить симулированные часы
-make logs            # логи pipeline/стендов
+make up / down / reset           # поднять+засеять / снести / сброс и заново
+make demo / check / status       # полный сценарий с проверками / ассерты / статус
+make build  DATE= BTS=           # определить поезд (bt-set) без деплоя
+make dev    DATE= BTS=           # bt-set + привязать dev -> собрать dev
+make test   DATE=                # привязать test -> собрать test (напрямую)
+make release DATE=               # prepod+prod (master не трогает)
+make accept DATE=                # merge prod->master + tag + рефреш активных dev/test
+make stop   DATE=                # stop-the-line
+make resolve REPO= MB= / mkmerge REPO= BTS= / rebuild DATE=   # конфликты
+make crashtest [NSVC= NBT=]      # краш-тест на масштабе
+make next-train / tick [DAYS=]   # каденс
 ```
 
 ---
 
 ## 6. Ограничения
 
-- **GitLab CE тяжёлый** (RAM/диск). Если тесно — урезать сервисы GitLab или вынести на VM. Остальное лёгкое.
-- **Deploy — симуляция**, намеренно простая: показать "ветка -> стенд", не воспроизводить ArgoCD/OpenShift.
-- **Симулированное время** только в полигоне, не в реальные cron.
-
----
-
-## 7. Следующий шаг
-
-Фаза 0: поднять GitLab+runner в compose и засеять репозитории. После зелёной Фазы 0 — по фазам, каждая через `destroy -> apply -> работает`.
+- **GitLab CE тяжёлый** (RAM/диск, ~4 ГБ). Единственный тяжёлый компонент.
+- **Deploy — симуляция** (nginx-образ на стенд), не воспроизводит ArgoCD/OpenShift.
+- **`make demo` не идемпотентен** к остаточным merge-веткам прошлых прогонов — контракт `make reset && make demo`.
+- **Производительность:** `ls-remote` фильтр уже не клонирует лишнее; на сотнях репо — кэш/параллелизм при росте.

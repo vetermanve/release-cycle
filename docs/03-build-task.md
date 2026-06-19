@@ -22,59 +22,60 @@
 
 | БТ | Репо | Назначение демо |
 |----|------|-----------------|
-| BT-16 | svc-a | одиночный backend |
-| BT-25 | svc-b | одиночный backend |
+| BT-16, BT-25 | svc-a / svc-b | одиночный backend |
 | BT-30 | svc-a + frontend | multi-repo (одноимённые ветки) |
-| BT-77 | svc-a | конфликт (трогает общий `shared.json`) |
-| BT-99 | svc-b | дефектный (gate fail при inject) |
+| BT-42, BT-43 | svc-a / svc-b | постоянные демо-фичи |
+| BT-77, BT-78 | svc-a (`shared.json`) | конфликтная пара (один ханк) |
+| BT-79 | svc-a (`shared.json`) | третий в кластере (тройной конфликт, `mkmerge`) |
+| BT-81, BT-82 | svc-a (`flags.json`) | дизъюнктная конфликтная пара (другой файл -> композится) |
+| BT-99 | svc-b | дефектный (stop-the-line) |
+
+Описания БТ — в `seed/jira/BT-<N>` (mock-Jira). Состав поезда (`bt-set.yaml`) — только id, без поля migration.
 
 ---
 
 ## 2. Стенды и deploy-симуляция
 
-Стенд = один nginx-образ, собранный с замердженным контентом ветки, запущенный на своём порту.
+Стенд = один nginx-образ, собранный с замердженным контентом ветки `<env>-<DATE>`, запущенный на своём порту.
+Стенд деплоится, только если на него указывает `stands/<env>`.
 
 | Стенд | Ветка | Порт |
 |-------|-------|------|
 | dev | `dev-<DATE>` | 8081 |
 | test | `test-<DATE>` | 8082 |
-| prepod | `release-<DATE>` | 8083 |
-| prod | `master` (после merge) | 8084 |
+| prepod | `prepod-<DATE>` | 8083 |
+| prod | `prod-<DATE>` | 8084 |
 
-Deploy-job (GitLab CI, docker через socket):
-1. clone env-ветку 3 репо;
-2. собрать webroot: frontend -> `/`, svc-a -> `/svc-a/`, svc-b -> `/svc-b/`; сгенерить `features/index.json` на бэкенд и `meta.json` (train, env, БТ, время);
-3. `docker build` образ `stand-<env>:<train>` с этим webroot (FROM nginx:alpine);
-4. `docker rm -f stand-<env>; docker run -d --name stand-<env> -p <port>:80 stand-<env>:<train>`.
-
-Это и есть "разливаем статические файлы на разные docker-образы". DinD не нужен — docker-out-of-docker через сокет.
+Каждая `<env>-<DATE>` собирается reconcile НЕЗАВИСИМО (`master + БТ + merge-ветки`), не срезом.
+`deploy_stand.sh` (docker через socket): clone веток репо по каталогу -> webroot (frontend в `/`, бэкенды в
+`/<repo>/`, генерим `features/index.json` для любого `*/features` + `meta.json`) -> `docker build stand-<env>:<train>`
+-> `docker run`. DinD не нужен — docker-out-of-docker через сокет.
 
 ---
 
 ## 3. Жизненный цикл (что проигрываем)
 
-1. Разработчик добавляет БТ в `trains/<DATE>/bt-set.yaml` (MR в release-repo).
-2. CI release-repo (reconcile): пересборка `dev-<DATE>` от master + merge feature-веток по auto-scan -> deploy dev-стенд. Live-доска dev показывает набор БТ.
-3. Push в `feature/bt-N` -> сервисный CI триггерит reconcile (multi-project trigger) -> dev пересобран.
-4. Отправление (`make test DATE=` / cron): `open->departed`, cut `test-<DATE>`, deploy test-стенд.
-5. Релиз (`make release DATE=`): cut `release-<DATE>`, deploy prepod; затем prod: merge `release-<DATE>`->`master` во всех репо, deploy prod, `status: shipped`.
-6. Stop-the-line (`make stop DATE=` / defect inject): `stopped`, `postmortem.md`, БТ -> следующий поезд.
-
-(Команда = стенд, куда катит: `make dev` -> dev, `make test` -> test, `make release` -> prepod+prod.)
-7. Каденс: `next-train` из `schedule.yaml` (Вт/Чт | daily) + симулированные часы (`make tick`).
+1. `make dev DATE= BTS=` -> bt-set + `stands/dev` -> reconcile собирает `dev-DATE` + deploy dev.
+2. Push в `feature/bt-N` -> сервисный CI триггерит reconcile -> рефреш активных **dev/test** (prepod/prod нет).
+3. `make test DATE=` -> `stands/test=DATE` -> собрать test напрямую (можно минуя dev).
+4. `make release DATE=` -> `stands/prepod+prod=DATE` -> собрать предпрод+прод; **master не трогаем**.
+5. `make accept DATE=` -> прод принят: `prod-DATE -> master` + tag `shipped-DATE` -> master подмержен -> рефреш активных dev/test; `status: shipped`.
+6. `make stop DATE=` (или defect inject) -> `stopped` + `postmortem.md`, БТ -> следующий поезд.
+7. Конфликт -> `merge/bt-X-bt-Y` skeleton -> `make resolve` (или `mkmerge` для кластеров) -> `rebuild`.
+8. Каденс: `next-train` из `schedule.yaml` (Вт/Чт | daily) + `make tick`.
 
 ---
 
-## 4. Инварианты автономной проверки (make check)
+## 4. Инварианты автономной проверки (make check / make demo)
 
-- reconcile: bt-set с BT-16,BT-25 -> dev-стенд (8081) отдаёт оба в meta.json.
-- pull БТ: убрать BT-25 -> dev пересобран без него.
-- multi-repo: BT-30 -> и svc-a, и frontend на стенде содержат его.
-- конфликт: BT-77 + второй на общий файл -> pipeline reconcile красный.
-- depart: test-стенд (8082) = состав поезда.
-- gate pass: prod-стенд (8084) = состав; master содержит merge; тег есть.
-- gate fail: stopped + postmortem.md; БТ в следующем поезде.
-- каденс: next-train Вт/Чт корректен; tick на daily меняет поведение.
+- reconcile: dev-стенд (8081) = состав поезда (meta.json); выдернуть БТ -> пересобран без него.
+- multi-repo: BT-30 -> svc-a и frontend на стенде.
+- авто-рефреш: push в feature/bt-16 -> dev/test обновлены, prepod/prod нет.
+- release: prod-стенд (8084) = состав, master НЕ тронут (до accept не shipped).
+- accept: после `make accept` -> `status: shipped`, тег `shipped-DATE`, master содержит merge, dev/test пересобраны.
+- stop: `stopped` + postmortem.md; БТ в следующем поезде.
+- конфликт: skeleton создан, bt-ветки чистые; resolve -> dev разрешён; дизъюнктные merge-ветки композятся.
+- каденс: next-train Вт/Чт корректен.
 
 Все проверки — curl стендов + GitLab API (ветки/теги/pipeline-статусы) -> assert. Без ручных шагов.
 
@@ -85,8 +86,8 @@ Deploy-job (GitLab CI, docker через socket):
 - Единая точка входа — `Makefile`.
 - `make reset` = полный destroy + bootstrap из seed -> детерминированное состояние.
 - `make reset && make demo && make check` зелёный с нуля.
-- Весь seed-контент в репо (`*-seed/`), GitLab — рантайм-носитель.
-- Идемпотентность: повтор любой команды не ломает состояние.
+- Весь seed-контент в репо (`seed/`), GitLab — рантайм-носитель.
+- Идемпотентность: повтор любой команды не ломает состояние (демо требует чистый старт `make reset`).
 
 ---
 
@@ -96,15 +97,18 @@ Deploy-job (GitLab CI, docker через socket):
 make up            # colima-check, GitLab+runner up, seed (идемпотентно)
 make down          # стек вниз, снести stand-* контейнеры
 make reset         # down + очистка томов + up (чистый прогон)
-make demo          # проиграть полный happy-path лайфцикл
+make demo          # полный сценарий с проверками
 make check         # автономные ассерты (curl + API)
 make status        # поезда + содержимое стендов
-make dev DATE= BTS=   # собрать поезд -> dev-стенд
-make test DATE=       # -> тест-стенд
-make release DATE=    # -> предпрод + прод
-make stop DATE=       # stop-the-line
-make inject-defect DATE= BT=
-make tick DAYS=    # симулированные часы
+make build DATE= BTS=  # определить поезд (bt-set) без деплоя
+make dev DATE= BTS=    # bt-set + привязать dev -> собрать dev
+make test DATE=        # привязать test -> собрать test (напрямую)
+make release DATE=     # prepod+prod (master не трогает)
+make accept DATE=      # merge prod->master + tag + рефреш dev/test
+make stop DATE=        # stop-the-line
+make resolve REPO= MB= / mkmerge REPO= BTS= / rebuild DATE=   # конфликты
+make crashtest [NSVC= NBT=]   # краш-тест на масштабе
+make next-train / tick DAYS=  # каденс
 make logs
 ```
 
