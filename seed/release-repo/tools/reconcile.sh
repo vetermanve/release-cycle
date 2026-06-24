@@ -130,6 +130,15 @@ set_status() {  # date status (commit [skip ci])
 
 has_remote_branch() { git ls-remote --heads "$(auth_url "$1")" "$2" 2>/dev/null | grep -q "refs/heads/$2\$"; }
 
+# Снять устаревшую сборку с remote: репо ПЕРЕСТАЛ быть затронут поездом (БТ выдернули) ->
+# его ветки <env>-<date> быть не должно. Без сноса deploy склонирует старую ветку (протечка БТ).
+drop_stale_branch() {  # name env date
+  local name="$1" br="$2-$3"
+  has_remote_branch "$name" "$br" || return 0
+  git push -q "$(auth_url "$name")" --delete "$br" >/dev/null 2>&1 || true
+  log "    ${name}: ${br} снята с remote (репо больше не затронут поездом)"
+}
+
 # Приёмка прода: prod-<date> -> master + tag во всех затронутых репо; затем master
 # подмержен во все поезда (env пересобираются от свежего master) -> рефреш активных dev/test.
 accept_train() {  # date
@@ -169,13 +178,17 @@ assemble_stand() {  # env date
   local conflict=0 name mount rc
   while IFS=$'\t' read -r name mount; do
     [ -n "$name" ] || continue
-    if ! repo_affected "$name" "$ids"; then log "    ${name}: не затронут (ls-remote, без клона)"; continue; fi
+    if ! repo_affected "$name" "$ids"; then
+      log "    ${name}: не затронут (ls-remote, без клона)"
+      drop_stale_branch "$name" "$env" "$date"   # выдернули БТ -> снести старую сборку
+      continue
+    fi
     local rdir="${work}/${name}"
     git clone -q "$(auth_url "$name")" "$rdir"
     git -C "$rdir" config user.email ci@polygon.local; git -C "$rdir" config user.name polygon-ci
     rc=0; build_repo "$rdir" "$name" "$env" "$date" "$ids" || rc=$?
     case "$rc" in
-      2) :;;
+      2) drop_stale_branch "$name" "$env" "$date";;   # в клоне нет feature-веток набора
       0) echo "${name} ${env}-${date} ${BUILD_SHA} bts=${BUILD_BTS}" >> "$lock"
          log "    ${name}: ${env}-${date} ${BUILD_SHA} (БТ=${BUILD_BTS})";;
       *) conflict=1; CONFLICT_MSG="${CONFLICT_MSG}"; log "    CONFLICT ${CONFLICT_MSG}"; break;;

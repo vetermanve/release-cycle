@@ -268,9 +268,14 @@ cmd_demo() {
   stand_feature_exists dev "svc-a/features/bt-30.json" && ok "svc-a/bt-30 на dev" || fail "нет svc-a/bt-30"
   stand_feature_exists dev "features/bt-30.json" && ok "frontend/bt-30 на dev" || fail "нет frontend/bt-30"
 
-  echo "### 3. Выдернуть BT-25 -> пересборка без него"
+  echo "### 3. Выдернуть BT-25 -> пересборка без него (svc-b больше не затронут)"
   echo "  dev: $(cmd_dev $T1 16,30)"
-  stand_has_bt dev 25 && fail "BT-25 всё ещё на dev" || ok "BT-25 убран с dev"
+  stand_has_bt dev 25 && fail "BT-25 всё ещё в meta доски dev" || ok "BT-25 убран из meta dev"
+  # АНКОРЬ: реальный файл, не только доска. svc-b стал незатронут -> устаревшая dev-ветка
+  # должна быть снята с remote, иначе deploy отдаст старый bt-25.json (протечка выдернутого БТ).
+  stand_feature_exists dev "svc-b/features/bt-25.json" \
+    && fail "файл svc-b/bt-25.json всё ещё отдаётся на dev (устаревшая сборка не снята)" \
+    || ok "файл svc-b/bt-25.json убран со стенда (404)"
   stand_has_bt dev 16 && ok "BT-16 остался" || fail "BT-16 пропал"
 
   echo "### 3b. Триггер #2: push в feature/bt-16 -> reconcile рефрешит привязанный dev"
